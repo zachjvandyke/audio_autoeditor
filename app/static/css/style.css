@@ -1068,6 +1068,121 @@ kbd {
     font-size: 0.6rem;
 }
 
+/* === Audio Mode Toggle === */
+.audio-mode-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.mode-option {
+    cursor: pointer;
+}
+
+.mode-option input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mode-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-lg);
+    transition: all 0.15s;
+}
+
+.mode-option input[type="radio"]:checked + .mode-card {
+    border-color: var(--primary);
+    background: var(--primary-bg);
+}
+
+.mode-card:hover {
+    border-color: var(--border-light);
+}
+
+.mode-option input[type="radio"]:checked + .mode-card:hover {
+    border-color: var(--primary-hover);
+}
+
+.mode-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-hover);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+}
+
+.mode-option input[type="radio"]:checked + .mode-card .mode-icon {
+    background: var(--primary);
+    color: white;
+}
+
+.mode-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.mode-info strong {
+    font-size: 0.95rem;
+}
+
+.mode-info span {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* === Continuous File List === */
+.continuous-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.continuous-file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.continuous-file-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: var(--bg-hover);
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.continuous-total {
+    padding: 0.5rem 0.75rem;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    border-top: 1px solid var(--border);
+    margin-top: 0.25rem;
+}
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

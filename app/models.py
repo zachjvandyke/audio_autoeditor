@@ -10,6 +10,9 @@ class Project(db.Model):
     status = db.Column(
         db.String(50), nullable=False, default="created"
     )  # created, processing, ready, exported
+    audio_mode = db.Column(
+        db.String(50), nullable=False, default="chapterized"
+    )  # chapterized, continuous
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

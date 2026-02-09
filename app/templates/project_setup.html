@@ -81,9 +81,54 @@
         </div>
     </div>
 
-    <!-- Step 2: Audio Assignment -->
+    <!-- Step 2: Audio Mode & Assignment -->
     <form method="POST" action="{{ url_for('project.assign_chapters', project_id=project.id) }}" id="setupForm">
+
+        <!-- Audio Mode Toggle -->
         <div class="form-section setup-section">
+            <h2>Audio File Mode</h2>
+            <p class="form-hint">How are your audio files organized?</p>
+
+            <div class="audio-mode-toggle">
+                <label class="mode-option" id="modeChapterized">
+                    <input type="radio" name="audio_mode" value="chapterized" {% if project.audio_mode != 'continuous' %}checked{% endif %}>
+                    <div class="mode-card">
+                        <div class="mode-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                                <line x1="8" y1="7" x2="16" y2="7"/>
+                                <line x1="8" y1="11" x2="13" y2="11"/>
+                            </svg>
+                        </div>
+                        <div class="mode-info">
+                            <strong>Chapterized</strong>
+                            <span>Each audio file corresponds to one chapter. Assign files to chapters below.</span>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="mode-option" id="modeContinuous">
+                    <input type="radio" name="audio_mode" value="continuous" {% if project.audio_mode == 'continuous' %}checked{% endif %}>
+                    <div class="mode-card">
+                        <div class="mode-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18V5l12-2v13"/>
+                                <circle cx="6" cy="18" r="3"/>
+                                <circle cx="18" cy="16" r="3"/>
+                            </svg>
+                        </div>
+                        <div class="mode-info">
+                            <strong>Continuous</strong>
+                            <span>Audio files are one long stream (single file, or split at arbitrary points). Chapter boundaries are detected automatically.</span>
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Chapterized: Audio-to-Chapter Assignment -->
+        <div class="form-section setup-section" id="chapterizedSection">
             <h2>Audio Files &rarr; Chapters</h2>
             <p class="form-hint">Assign each audio file to the chapter it belongs to. Files have been auto-matched by filename where possible.</p>
 
@@ -120,6 +165,45 @@
                     </div>
                 </div>
                 {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted">No audio files uploaded.</p>
+            {% endif %}
+        </div>
+
+        <!-- Continuous: Audio File Order -->
+        <div class="form-section setup-section" id="continuousSection" style="display:none;">
+            <h2>Audio File Order</h2>
+            <p class="form-hint">
+                Your audio will be treated as one continuous stream. Verify the playback order below.
+                The alignment engine will automatically match audio to the manuscript text and detect chapter boundaries within the audio.
+            </p>
+
+            {% if audio_files %}
+            <div class="continuous-file-list">
+                {% for af in audio_files %}
+                <div class="continuous-file-row">
+                    <span class="continuous-file-num">{{ loop.index }}</span>
+                    <div class="assignment-audio">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                        </svg>
+                        <div class="assignment-audio-info">
+                            <span class="assignment-filename">{{ af.original_filename }}</span>
+                            {% if af.duration > 0 %}
+                            <span class="assignment-duration">{{ '%d:%02d'|format(af.duration // 60, af.duration % 60) }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                <div class="continuous-total">
+                    Total duration: {{ '%d:%02d:%02d'|format(
+                        audio_files|map(attribute='duration')|sum // 3600,
+                        (audio_files|map(attribute='duration')|sum % 3600) // 60,
+                        audio_files|map(attribute='duration')|sum % 60
+                    ) }}
+                </div>
             </div>
             {% else %}
             <p class="muted">No audio files uploaded.</p>
@@ -174,6 +258,31 @@
     var projectId = {{ project.id }};
 
     // ========================
+    // Audio Mode Toggle
+    // ========================
+    var chapterizedSection = document.getElementById('chapterizedSection');
+    var continuousSection = document.getElementById('continuousSection');
+    var modeRadios = document.querySelectorAll('input[name="audio_mode"]');
+
+    function updateModeView() {
+        var mode = document.querySelector('input[name="audio_mode"]:checked').value;
+        if (mode === 'continuous') {
+            chapterizedSection.style.display = 'none';
+            continuousSection.style.display = '';
+        } else {
+            chapterizedSection.style.display = '';
+            continuousSection.style.display = 'none';
+        }
+    }
+
+    modeRadios.forEach(function(radio) {
+        radio.addEventListener('change', updateModeView);
+    });
+
+    // Initialize view on load
+    updateModeView();
+
+    // ========================
     // Rename Chapter
     // ========================
     document.querySelectorAll('.toc-rename-btn').forEach(function(btn) {
@@ -183,13 +292,11 @@
             var input = document.querySelector('.toc-rename-input[data-chapter-id="' + chapterId + '"]');
 
             if (input.style.display === 'none') {
-                // Show input, hide title
                 titleSpan.style.display = 'none';
                 input.style.display = '';
                 input.focus();
                 input.select();
             } else {
-                // Save and hide input
                 saveRename(chapterId, input, titleSpan);
             }
         });
@@ -242,7 +349,6 @@
             titleSpan.textContent = data.title;
             input.style.display = 'none';
             titleSpan.style.display = '';
-            // Update the chapter select dropdowns
             updateChapterSelects();
         })
         .catch(function(err) { console.error('Rename failed:', err); });
@@ -271,7 +377,6 @@
                     alert(data.error);
                     return;
                 }
-                // Reload the page to reflect changes
                 window.location.reload();
             })
             .catch(function(err) { console.error('Remove failed:', err); });
@@ -337,7 +442,6 @@
             .then(function(chapters) {
                 document.querySelectorAll('.chapter-select').forEach(function(select) {
                     var currentVal = select.value;
-                    // Keep unassigned option
                     select.innerHTML = '<option value="">-- Unassigned --</option>';
                     chapters.forEach(function(ch) {
                         var opt = document.createElement('option');
