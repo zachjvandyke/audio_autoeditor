@@ -4,6 +4,8 @@ Uses Whisper for transcription with word-level timestamps, then aligns
 the transcription against the manuscript text using sequence matching.
 Falls back to simulated alignment when Whisper is not available.
 """
+from __future__ import annotations
+
 import difflib
 import os
 import re
