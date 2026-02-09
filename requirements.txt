@@ -1,0 +1,11 @@
+Flask>=3.0
+Flask-SQLAlchemy>=3.1
+Flask-Migrate>=4.0
+SQLAlchemy>=2.0
+
+# Audio processing (optional, for Whisper-based alignment)
+# faster-whisper>=1.0  # Recommended: fast Whisper inference
+# openai-whisper>=20231117  # Alternative: OpenAI's Whisper
+
+# These are only needed if you want full audio analysis capabilities:
+# ffmpeg-python>=0.2  # Python bindings for ffmpeg

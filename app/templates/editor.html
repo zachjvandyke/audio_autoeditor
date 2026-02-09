@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}{{ project.title }} - Editor{% endblock %}
+
+{% block head %}
+<style>
+    /* Editor-specific layout overrides */
+    .main-content { padding: 0; max-width: none; height: calc(100vh - 56px); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-layout" data-project-id="{{ project.id }}">
+
+    <!-- Left Panel: Annotations/Conflicts -->
+    <aside class="editor-sidebar" id="annotationPanel">
+        <div class="sidebar-header">
+            <h2>Annotations</h2>
+            <span class="annotation-count" id="annotationCount">{{ conflicts|length }}</span>
+        </div>
+
+        <div class="sidebar-filters">
+            <select id="filterType" class="filter-select">
+                <option value="">All Types</option>
+                <option value="misread">Misreads</option>
+                <option value="missing_word">Missing Words</option>
+                <option value="extra_word">Extra Words</option>
+                <option value="low_confidence">Low Confidence</option>
+                <option value="pause">Long Pauses</option>
+            </select>
+            <select id="filterStatus" class="filter-select">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="ok">OK</option>
+                <option value="needs_edit">Needs Edit</option>
+            </select>
+        </div>
+
+        <div class="sidebar-actions">
+            <button class="btn btn-sm btn-outline" id="markAllOk" title="Mark all visible as OK">
+                Mark All OK
+            </button>
+            <button class="btn btn-sm btn-outline" id="markAllEdit" title="Mark all visible as Needs Edit">
+                Mark All Edit
+            </button>
+        </div>
+
+        <div class="annotation-list" id="annotationList">
+            {% for conflict in conflicts %}
+            <div class="annotation-item annotation-{{ conflict.status }}"
+                 data-conflict-id="{{ conflict.id }}"
+                 data-segment-id="{{ conflict.segment_id }}"
+                 data-conflict-type="{{ conflict.conflict_type }}"
+                 data-status="{{ conflict.status }}">
+                <div class="annotation-type">
+                    <span class="type-badge type-{{ conflict.conflict_type }}">
+                        {% if conflict.conflict_type == 'misread' %}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        {% elif conflict.conflict_type == 'missing_word' %}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                        {% elif conflict.conflict_type == 'extra_word' %}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                        {% elif conflict.conflict_type == 'pause' %}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                        {% else %}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        {% endif %}
+                        {{ conflict.conflict_type|replace('_', ' ')|title }}
+                    </span>
+                </div>
+                <div class="annotation-content">
+                    {% if conflict.detected_text and conflict.expected_text %}
+                        <span class="detected">"{{ conflict.detected_text }}"</span>
+                        <span class="arrow">&#8594;</span>
+                        <span class="expected">"{{ conflict.expected_text }}"</span>
+                    {% elif conflict.detected_text %}
+                        <span class="detected">"{{ conflict.detected_text }}"</span>
+                    {% elif conflict.expected_text %}
+                        <span class="expected missing-label">(missing: "{{ conflict.expected_text }}")</span>
+                    {% endif %}
+                </div>
+                <div class="annotation-actions">
+                    <button class="action-btn action-ok {% if conflict.status == 'ok' %}active{% endif %}"
+                            data-action="ok" title="Mark as OK (A)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        OK
+                    </button>
+                    <button class="action-btn action-edit {% if conflict.status == 'needs_edit' %}active{% endif %}"
+                            data-action="needs_edit" title="Mark as Needs Edit (D)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        Edit
+                    </button>
+                    <button class="action-btn action-play" data-action="play" title="Play (Space)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not conflicts %}
+            <div class="no-annotations">
+                {% if project.status == 'processing' %}
+                    <span class="spinner"></span>
+                    <p>Processing audio...</p>
+                {% elif segments %}
+                    <p>No conflicts detected. Audio matches manuscript.</p>
+                {% else %}
+                    <p>No alignment data yet. Upload audio files and process.</p>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- Center Panel: Manuscript Text + Alignment -->
+    <section class="editor-main" id="editorMain">
+        <div class="editor-toolbar">
+            <div class="toolbar-left">
+                <h2>{{ project.title }}</h2>
+                <span class="status-badge status-{{ project.status }}">{{ project.status }}</span>
+            </div>
+            <div class="toolbar-right">
+                {% if project.status in ('ready', 'exported') %}
+                <form method="POST" action="{{ url_for('project.reprocess', project_id=project.id) }}" class="inline-form">
+                    <button type="submit" class="btn btn-outline btn-sm">Reprocess</button>
+                </form>
+                <a href="{{ url_for('editor.export', project_id=project.id) }}" class="btn btn-primary btn-sm">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Export RPP
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="manuscript-view" id="manuscriptView">
+            {% if chapters %}
+                {% for chapter in chapters %}
+                <div class="chapter-block">
+                    <h3 class="chapter-heading">{{ chapter.text_content }}</h3>
+                    {% for para in chapter.children %}
+                    <div class="paragraph-block" data-section-id="{{ para.id }}">
+                        <div class="paragraph-text">
+                            {# Render words with alignment highlighting #}
+                            {% set para_segments = [] %}
+                            {% for seg in segments if seg.manuscript_section_id == para.id %}
+                                {% if para_segments.append(seg) %}{% endif %}
+                            {% endfor %}
+
+                            {% if para_segments %}
+                                {% for seg in para_segments %}
+                                <span class="word-span
+                                    {% if seg.id in conflict_map %} word-conflict word-{{ conflict_map[seg.id][0].conflict_type }}{% endif %}
+                                    {% if seg.id in take_map %} word-has-takes{% endif %}"
+                                    data-segment-id="{{ seg.id }}"
+                                    data-start="{{ seg.start_time }}"
+                                    data-end="{{ seg.end_time }}"
+                                    data-audio-id="{{ seg.audio_file_id }}"
+                                    data-confidence="{{ seg.confidence }}"
+                                    {% if seg.confidence < 0.7 %}style="background-color: rgba(255, 100, 100, {{ (1 - seg.confidence) * 0.3 }})"{% endif %}>
+                                    {%- if seg.expected_text %}{{ seg.expected_text }}{% elif seg.text %}{{ seg.text }}{% else %}[...]{% endif -%}
+                                </span>
+                                {% endfor %}
+                            {% else %}
+                                {{ para.text_content }}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            {% elif paragraphs %}
+                {% for para in paragraphs %}
+                <div class="paragraph-block" data-section-id="{{ para.id }}">
+                    <div class="paragraph-text">
+                        {% set para_segments = [] %}
+                        {% for seg in segments if seg.manuscript_section_id == para.id %}
+                            {% if para_segments.append(seg) %}{% endif %}
+                        {% endfor %}
+
+                        {% if para_segments %}
+                            {% for seg in para_segments %}
+                            <span class="word-span
+                                {% if seg.id in conflict_map %} word-conflict word-{{ conflict_map[seg.id][0].conflict_type }}{% endif %}
+                                {% if seg.id in take_map %} word-has-takes{% endif %}"
+                                data-segment-id="{{ seg.id }}"
+                                data-start="{{ seg.start_time }}"
+                                data-end="{{ seg.end_time }}"
+                                data-audio-id="{{ seg.audio_file_id }}"
+                                data-confidence="{{ seg.confidence }}">
+                                {%- if seg.expected_text %}{{ seg.expected_text }}{% elif seg.text %}{{ seg.text }}{% else %}[...]{% endif -%}
+                            </span>
+                            {% endfor %}
+                        {% else %}
+                            {{ para.text_content }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-manuscript">
+                    <p>No manuscript content loaded.</p>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Right Panel: Takes / Audio Info -->
+    <aside class="editor-details" id="detailsPanel">
+        <div class="details-section" id="audioPlayerSection">
+            <h3>Audio Player</h3>
+            {% if audio_files %}
+            <div class="audio-player-wrap">
+                <audio id="audioPlayer" controls preload="auto">
+                    <source src="{{ url_for('api.serve_audio', audio_id=audio_files[0].id) }}" type="audio/wav">
+                </audio>
+                <div class="player-info">
+                    <span id="currentTime">0:00</span> / <span id="totalTime">{{ '%.1f'|format(audio_files[0].duration) }}s</span>
+                </div>
+            </div>
+            {% else %}
+            <p class="muted">No audio files uploaded.</p>
+            {% endif %}
+        </div>
+
+        <div class="details-section" id="takeSection" style="display: none;">
+            <h3>Takes</h3>
+            <p class="take-hint">Multiple recordings detected for this segment. Select the best take:</p>
+            <div class="take-list" id="takeList">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+
+        <div class="details-section" id="segmentInfo" style="display: none;">
+            <h3>Segment Details</h3>
+            <div class="info-grid">
+                <div class="info-row">
+                    <span class="info-label">Detected:</span>
+                    <span class="info-value" id="infoDetected">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Expected:</span>
+                    <span class="info-value" id="infoExpected">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Time:</span>
+                    <span class="info-value" id="infoTime">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Confidence:</span>
+                    <span class="info-value" id="infoConfidence">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="details-section">
+            <h3>Keyboard Shortcuts</h3>
+            <div class="shortcuts-list">
+                <div class="shortcut"><kbd>A</kbd> Mark as OK</div>
+                <div class="shortcut"><kbd>D</kbd> Mark as Needs Edit</div>
+                <div class="shortcut"><kbd>Space</kbd> Play segment audio</div>
+                <div class="shortcut"><kbd>&#8593;</kbd> Previous annotation</div>
+                <div class="shortcut"><kbd>&#8595;</kbd> Next annotation</div>
+                <div class="shortcut"><kbd>1-9</kbd> Select take number</div>
+            </div>
+        </div>
+
+        <div class="details-section">
+            <h3>Progress</h3>
+            <div class="progress-stats">
+                <div class="stat-row">
+                    <span>Total Annotations</span>
+                    <strong id="statTotal">{{ conflicts|length }}</strong>
+                </div>
+                <div class="stat-row">
+                    <span>Resolved</span>
+                    <strong id="statResolved">{{ project.conflict_stats.resolved }}</strong>
+                </div>
+                <div class="stat-row">
+                    <span>Pending</span>
+                    <strong id="statPending">{{ project.conflict_stats.pending }}</strong>
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- Take data for JS -->
+<script>
+    window.TAKE_DATA = {
+        {% for seg_id, takes in take_map.items() %}
+        {{ seg_id }}: [
+            {% for take in takes %}
+            {
+                id: {{ take.id }},
+                takeNumber: {{ take.take_number }},
+                startTime: {{ take.start_time }},
+                endTime: {{ take.end_time }},
+                isSelected: {{ 'true' if take.is_selected else 'false' }},
+                confidence: {{ take.confidence }},
+                audioFileId: {{ take.audio_file_id }}
+            }{{ ',' if not loop.last }}
+            {% endfor %}
+        ]{{ ',' if not loop.last }}
+        {% endfor %}
+    };
+
+    window.AUDIO_FILES = {
+        {% for af in audio_files %}
+        {{ af.id }}: {
+            url: "{{ url_for('api.serve_audio', audio_id=af.id) }}",
+            filename: "{{ af.original_filename }}",
+            duration: {{ af.duration }}
+        }{{ ',' if not loop.last }}
+        {% endfor %}
+    };
+</script>
+<script src="{{ url_for('static', filename='js/editor.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}New Project - Audio AutoEditor{% endblock %}
+
+{% block content %}
+<div class="create-page">
+    <div class="create-header">
+        <a href="{{ url_for('dashboard.index') }}" class="back-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+        </a>
+        <h1>Create New Project</h1>
+    </div>
+
+    <form method="POST" action="{{ url_for('project.create') }}" enctype="multipart/form-data" class="create-form" id="createForm">
+        <div class="form-section">
+            <h2>Project Details</h2>
+            <div class="form-group">
+                <label for="title">Project Title <span class="required">*</span></label>
+                <input type="text" id="title" name="title" required placeholder="e.g., My Audiobook - Chapter 1" class="form-input">
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2>Manuscript</h2>
+            <p class="form-hint">Upload a text file or paste the manuscript text below.</p>
+
+            <div class="form-group">
+                <label for="manuscript_file">Upload Manuscript File</label>
+                <div class="file-upload" id="manuscriptUpload">
+                    <input type="file" id="manuscript_file" name="manuscript_file" accept=".txt,.text,.md" class="file-input">
+                    <div class="file-upload-label">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        <span>Choose file or drag and drop</span>
+                        <span class="file-types">.txt, .md</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-divider">
+                <span>or</span>
+            </div>
+
+            <div class="form-group">
+                <label for="manuscript">Paste Manuscript Text</label>
+                <textarea id="manuscript" name="manuscript" rows="12" placeholder="Paste your manuscript text here...&#10;&#10;Chapter 1&#10;&#10;It was a dark and stormy night..." class="form-textarea"></textarea>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2>Audio Files</h2>
+            <p class="form-hint">Upload one or more audio recordings. Supported formats: WAV, MP3, FLAC, OGG, M4A, AAC.</p>
+
+            <div class="form-group">
+                <div class="file-upload file-upload-audio" id="audioUpload">
+                    <input type="file" id="audio_files" name="audio_files" accept=".wav,.mp3,.flac,.ogg,.m4a,.aac,.wma" multiple class="file-input">
+                    <div class="file-upload-label">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                        </svg>
+                        <span>Choose audio files or drag and drop</span>
+                        <span class="file-types">WAV, MP3, FLAC, OGG, M4A, AAC</span>
+                    </div>
+                </div>
+                <div id="audioFileList" class="file-list"></div>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary btn-lg" id="createBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Create Project
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // File upload preview for manuscript
+    const manuscriptInput = document.getElementById('manuscript_file');
+    const manuscriptUpload = document.getElementById('manuscriptUpload');
+    const manuscriptTextarea = document.getElementById('manuscript');
+
+    manuscriptInput.addEventListener('change', function() {
+        if (this.files.length > 0) {
+            const file = this.files[0];
+            manuscriptUpload.querySelector('span').textContent = file.name;
+            manuscriptUpload.classList.add('has-file');
+
+            // Read and preview the file content
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                manuscriptTextarea.value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    // Audio file list preview
+    const audioInput = document.getElementById('audio_files');
+    const audioFileList = document.getElementById('audioFileList');
+
+    audioInput.addEventListener('change', function() {
+        audioFileList.innerHTML = '';
+        for (const file of this.files) {
+            const item = document.createElement('div');
+            item.className = 'file-list-item';
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+            item.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                </svg>
+                <span class="file-name">${file.name}</span>
+                <span class="file-size">${sizeMB} MB</span>
+            `;
+            audioFileList.appendChild(item);
+        }
+    });
+
+    // Drag and drop
+    [manuscriptUpload, document.getElementById('audioUpload')].forEach(function(zone) {
+        zone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.classList.add('drag-over');
+        });
+        zone.addEventListener('dragleave', function() {
+            this.classList.remove('drag-over');
+        });
+        zone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            const input = this.querySelector('input[type="file"]');
+            input.files = e.dataTransfer.files;
+            input.dispatchEvent(new Event('change'));
+        });
+    });
+
+    // Form submission loading state
+    document.getElementById('createForm').addEventListener('submit', function() {
+        const btn = document.getElementById('createBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Creating...';
+    });
+});
+</script>
+{% endblock %}
