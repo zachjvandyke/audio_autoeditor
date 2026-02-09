@@ -24,6 +24,8 @@
     let visibleAnnotations = [];
     let isPlaying = false;
     let playTimeout = null;
+    let currentAudioFileId = null;
+    let cachedWordSpans = null;
 
     // ========================
     // Initialization
@@ -202,9 +204,8 @@
 
         if (wordSpan && audioPlayer) {
             const start = parseFloat(wordSpan.dataset.start);
-            const end = parseFloat(wordSpan.dataset.end);
             const audioId = wordSpan.dataset.audioId;
-            playAudioSegment(start, end, audioId);
+            playAudioSegment(start, null, audioId);
         }
     }
 
@@ -227,18 +228,37 @@
             playTimeout = null;
         }
 
+        clearPlayingHighlights();
+        currentAudioFileId = audioFileId || null;
         audioPlayer.currentTime = startTime;
         audioPlayer.play();
         isPlaying = true;
 
-        // Stop at end time
-        const duration = (endTime - startTime) * 1000;
-        if (duration > 0) {
-            playTimeout = setTimeout(function() {
-                audioPlayer.pause();
-                isPlaying = false;
-            }, duration + 100);
+        // Only auto-stop if an explicit end time is provided (e.g. take playback).
+        // Normal playback continues until the user pauses.
+        if (endTime != null) {
+            const duration = (endTime - startTime) * 1000;
+            if (duration > 0) {
+                playTimeout = setTimeout(function() {
+                    audioPlayer.pause();
+                    isPlaying = false;
+                    clearPlayingHighlights();
+                }, duration + 100);
+            }
         }
+    }
+
+    function getWordSpans() {
+        if (!cachedWordSpans) {
+            cachedWordSpans = Array.from(document.querySelectorAll('.word-span'));
+        }
+        return cachedWordSpans;
+    }
+
+    function clearPlayingHighlights() {
+        getWordSpans().forEach(function(span) {
+            span.classList.remove('playing');
+        });
     }
 
     // ========================
@@ -362,8 +382,7 @@
 
                 if (audioPlayer) {
                     const start = parseFloat(wordSpan.dataset.start);
-                    const end = parseFloat(wordSpan.dataset.end);
-                    playAudioSegment(start, end, wordSpan.dataset.audioId);
+                    playAudioSegment(start, null, wordSpan.dataset.audioId);
                 }
             }
 
@@ -425,11 +444,7 @@
                     e.preventDefault();
                     if (isPlaying && audioPlayer) {
                         audioPlayer.pause();
-                        isPlaying = false;
-                        if (playTimeout) {
-                            clearTimeout(playTimeout);
-                            playTimeout = null;
-                        }
+                        // pause event handler cleans up isPlaying, timeout, and highlights
                     } else {
                         playCurrentSegment();
                     }
@@ -564,10 +579,14 @@
             // Highlight current word during playback
             if (isPlaying) {
                 const currentTime = audioPlayer.currentTime;
-                document.querySelectorAll('.word-span').forEach(function(span) {
+                getWordSpans().forEach(function(span) {
                     const start = parseFloat(span.dataset.start);
                     const end = parseFloat(span.dataset.end);
-                    if (currentTime >= start && currentTime <= end) {
+                    // Only highlight words from the currently playing audio file
+                    if (currentAudioFileId && span.dataset.audioId !== currentAudioFileId) {
+                        span.classList.remove('playing');
+                    // Use < for end to prevent two adjacent words highlighting simultaneously
+                    } else if (currentTime >= start && currentTime < end) {
                         span.classList.add('playing');
                     } else {
                         span.classList.remove('playing');
@@ -578,6 +597,16 @@
 
         audioPlayer.addEventListener('ended', function() {
             isPlaying = false;
+            clearPlayingHighlights();
+        });
+
+        audioPlayer.addEventListener('pause', function() {
+            isPlaying = false;
+            if (playTimeout) {
+                clearTimeout(playTimeout);
+                playTimeout = null;
+            }
+            clearPlayingHighlights();
         });
     }
 
