@@ -137,12 +137,21 @@
         <div class="chapter-tabs">
             {% for ch in chapters %}
             <a href="{{ url_for('editor.edit', project_id=project.id, chapter=ch.id) }}"
-               class="chapter-tab {% if active_chapter and active_chapter.id == ch.id %}active{% endif %}">
+               class="chapter-tab {% if active_chapter and active_chapter.id == ch.id %}active{% endif %} {% if ch.processing_status == 'processing' %}chapter-tab-processing{% endif %}"
+               data-chapter-id="{{ ch.id }}"
+               data-processing-status="{{ ch.processing_status }}">
+                {% if ch.processing_status == 'processing' %}
+                <span class="spinner spinner-sm"></span>
+                {% elif ch.processing_status == 'pending' %}
+                <span class="chapter-tab-badge chapter-tab-pending">...</span>
+                {% endif %}
                 <span class="chapter-tab-name">{{ ch.text_content }}</span>
-                {% if ch.id in chapter_stats and chapter_stats[ch.id].pending > 0 %}
-                <span class="chapter-tab-badge">{{ chapter_stats[ch.id].pending }}</span>
-                {% elif ch.id in chapter_stats and chapter_stats[ch.id].total > 0 %}
-                <span class="chapter-tab-badge chapter-tab-done">&#10003;</span>
+                {% if ch.processing_status == 'ready' %}
+                    {% if ch.id in chapter_stats and chapter_stats[ch.id].pending > 0 %}
+                    <span class="chapter-tab-badge">{{ chapter_stats[ch.id].pending }}</span>
+                    {% elif ch.id in chapter_stats and chapter_stats[ch.id].total > 0 %}
+                    <span class="chapter-tab-badge chapter-tab-done">&#10003;</span>
+                    {% endif %}
                 {% endif %}
             </a>
             {% endfor %}

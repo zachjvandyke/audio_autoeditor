@@ -2,7 +2,7 @@ import os
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 from app import db
-from app.models import AlignmentSegment, AudioFile, Conflict, Project, Take
+from app.models import AlignmentSegment, AudioFile, Conflict, ManuscriptSection, Project, Take
 
 api_bp = Blueprint("api", __name__)
 
@@ -156,3 +156,201 @@ def get_conflicts(project_id):
         "expected_text": c.expected_text,
         "notes": c.notes,
     } for c in conflicts])
+
+
+# === TOC Editing Endpoints ===
+
+@api_bp.route("/project/<int:project_id>/chapters")
+def get_chapters(project_id):
+    """Get all chapters with boundary context for the setup page."""
+    chapters = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    result = []
+    for i, ch in enumerate(chapters):
+        paras = ManuscriptSection.query.filter_by(
+            parent_id=ch.id, section_type="paragraph"
+        ).order_by(ManuscriptSection.section_index).all()
+
+        # Boundary context: last para of previous chapter
+        prev_context = ""
+        if i > 0:
+            prev_paras = ManuscriptSection.query.filter_by(
+                parent_id=chapters[i - 1].id, section_type="paragraph"
+            ).order_by(ManuscriptSection.section_index.desc()).first()
+            if prev_paras:
+                prev_context = prev_paras.text_content[:200]
+
+        # Boundary context: first para of next chapter
+        next_context = ""
+        if i < len(chapters) - 1:
+            next_paras = ManuscriptSection.query.filter_by(
+                parent_id=chapters[i + 1].id, section_type="paragraph"
+            ).order_by(ManuscriptSection.section_index).first()
+            if next_paras:
+                next_context = next_paras.text_content[:200]
+
+        first_para = paras[0].text_content[:200] if paras else ""
+        last_para = paras[-1].text_content[:200] if paras else ""
+
+        result.append({
+            "id": ch.id,
+            "title": ch.text_content,
+            "section_index": ch.section_index,
+            "paragraph_count": len(paras),
+            "processing_status": ch.processing_status,
+            "first_paragraph": first_para,
+            "last_paragraph": last_para,
+            "prev_chapter_ending": prev_context,
+            "next_chapter_beginning": next_context,
+        })
+
+    return jsonify(result)
+
+
+@api_bp.route("/project/<int:project_id>/chapter/add", methods=["POST"])
+def add_chapter(project_id):
+    """Add a new chapter split at a given paragraph, or add an empty chapter."""
+    Project.query.get_or_404(project_id)
+    data = request.get_json()
+    title = data.get("title", "New Chapter").strip()
+    after_chapter_id = data.get("after_chapter_id")  # insert after this chapter
+    split_paragraph_id = data.get("split_paragraph_id")  # split at this paragraph
+
+    chapters = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    # Determine insert position
+    if after_chapter_id:
+        after = ManuscriptSection.query.get(after_chapter_id)
+        new_index = after.section_index + 1 if after else len(chapters)
+    else:
+        new_index = len(chapters)
+
+    # Shift subsequent chapters
+    for ch in chapters:
+        if ch.section_index >= new_index:
+            ch.section_index += 1
+
+    # Create the new chapter
+    new_chapter = ManuscriptSection(
+        project_id=project_id,
+        section_type="chapter",
+        section_index=new_index,
+        text_content=title,
+    )
+    db.session.add(new_chapter)
+    db.session.flush()
+
+    # If splitting: move paragraphs from split_paragraph onward to the new chapter
+    if split_paragraph_id and after_chapter_id:
+        source_chapter = ManuscriptSection.query.get(after_chapter_id)
+        if source_chapter:
+            split_para = ManuscriptSection.query.get(split_paragraph_id)
+            if split_para:
+                paras_to_move = ManuscriptSection.query.filter(
+                    ManuscriptSection.parent_id == source_chapter.id,
+                    ManuscriptSection.section_type == "paragraph",
+                    ManuscriptSection.section_index >= split_para.section_index,
+                ).all()
+                for idx, p in enumerate(paras_to_move):
+                    p.parent_id = new_chapter.id
+                    p.section_index = idx
+
+    db.session.commit()
+    return jsonify({"id": new_chapter.id, "title": title, "section_index": new_index})
+
+
+@api_bp.route("/chapter/<int:chapter_id>/remove", methods=["POST"])
+def remove_chapter(chapter_id):
+    """Remove a chapter heading, merging its paragraphs into the previous chapter."""
+    chapter = ManuscriptSection.query.get_or_404(chapter_id)
+    project_id = chapter.project_id
+
+    chapters = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    if len(chapters) <= 1:
+        return jsonify({"error": "Cannot remove the only chapter"}), 400
+
+    # Find previous chapter to merge into
+    prev_chapter = None
+    for ch in chapters:
+        if ch.section_index < chapter.section_index:
+            prev_chapter = ch
+
+    # If no previous, merge into next
+    next_chapter = None
+    if not prev_chapter:
+        for ch in chapters:
+            if ch.section_index > chapter.section_index:
+                next_chapter = ch
+                break
+
+    target = prev_chapter or next_chapter
+
+    # Move paragraphs to target chapter
+    if target:
+        existing_paras = ManuscriptSection.query.filter_by(
+            parent_id=target.id, section_type="paragraph"
+        ).count()
+
+        paras = ManuscriptSection.query.filter_by(
+            parent_id=chapter.id, section_type="paragraph"
+        ).order_by(ManuscriptSection.section_index).all()
+
+        for idx, p in enumerate(paras):
+            p.parent_id = target.id
+            p.section_index = existing_paras + idx
+
+    # Unlink audio files
+    AudioFile.query.filter_by(chapter_id=chapter.id).update({"chapter_id": None})
+
+    # Delete the chapter heading
+    db.session.delete(chapter)
+
+    # Re-index remaining chapters
+    remaining = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+    for idx, ch in enumerate(remaining):
+        ch.section_index = idx
+
+    db.session.commit()
+    return jsonify({"removed": chapter_id, "merged_into": target.id if target else None})
+
+
+@api_bp.route("/chapter/<int:chapter_id>/rename", methods=["POST"])
+def rename_chapter(chapter_id):
+    """Rename a chapter heading."""
+    chapter = ManuscriptSection.query.get_or_404(chapter_id)
+    data = request.get_json()
+    new_title = data.get("title", "").strip()
+    if not new_title:
+        return jsonify({"error": "Title cannot be empty"}), 400
+
+    chapter.text_content = new_title
+    db.session.commit()
+    return jsonify({"id": chapter.id, "title": new_title})
+
+
+@api_bp.route("/project/<int:project_id>/chapter-status")
+def chapter_processing_status(project_id):
+    """Get per-chapter processing status for polling."""
+    chapters = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    project = Project.query.get_or_404(project_id)
+
+    return jsonify({
+        "project_status": project.status,
+        "chapters": [{
+            "id": ch.id,
+            "title": ch.text_content,
+            "processing_status": ch.processing_status,
+        } for ch in chapters],
+    })

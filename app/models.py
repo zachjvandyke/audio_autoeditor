@@ -76,6 +76,9 @@ class ManuscriptSection(db.Model):
     parent_id = db.Column(
         db.Integer, db.ForeignKey("manuscript_sections.id"), nullable=True
     )
+    processing_status = db.Column(
+        db.String(50), nullable=False, default="pending"
+    )  # pending, processing, ready (for chapters)
 
     children = db.relationship(
         "ManuscriptSection", backref=db.backref("parent", remote_side="ManuscriptSection.id"),

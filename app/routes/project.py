@@ -255,7 +255,8 @@ def _start_processing(app, project_id: int):
 
 
 def _process_project(app, project_id: int):
-    """Process a project: transcribe audio per chapter, align, detect conflicts."""
+    """Process a project incrementally: each chapter is committed independently
+    so the editor can display results as they become available."""
     with app.app_context():
         try:
             project = Project.query.get(project_id)
@@ -268,26 +269,33 @@ def _process_project(app, project_id: int):
                 project_id=project_id, section_type="chapter"
             ).order_by(ManuscriptSection.section_index).all()
 
-            all_segments = []
             global_seg_idx = 0
 
             for chapter in chapters:
-                # Get this chapter's text from its paragraphs
+                # Mark chapter as processing
+                chapter.processing_status = "processing"
+                db.session.commit()
+
                 paragraphs = ManuscriptSection.query.filter_by(
                     parent_id=chapter.id, section_type="paragraph"
                 ).order_by(ManuscriptSection.section_index).all()
 
                 chapter_text = " ".join(p.text_content for p in paragraphs)
                 if not chapter_text:
+                    chapter.processing_status = "ready"
+                    db.session.commit()
                     continue
 
-                # Get audio files assigned to this chapter
                 chapter_audio = AudioFile.query.filter_by(
                     project_id=project_id, chapter_id=chapter.id
                 ).order_by(AudioFile.sort_order).all()
 
                 if not chapter_audio:
+                    chapter.processing_status = "ready"
+                    db.session.commit()
                     continue
+
+                chapter_segments = []
 
                 for audio in chapter_audio:
                     filepath = os.path.join(upload_folder, audio.filename)
@@ -335,7 +343,7 @@ def _process_project(app, project_id: int):
 
                         global_seg_idx += 1
 
-                    all_segments.extend(aligned)
+                    chapter_segments.extend(aligned)
 
                     # Detect retakes within this chapter's audio
                     retakes = detect_retakes(transcript_words, chapter_text)
@@ -359,6 +367,28 @@ def _process_project(app, project_id: int):
                                 )
                                 db.session.add(take)
 
+                # Detect conflicts for this chapter's segments
+                conflicts = detect_conflicts(chapter_segments)
+                for c in conflicts:
+                    matching_seg = AlignmentSegment.query.filter_by(
+                        project_id=project_id,
+                        segment_index=c["segment_index"],
+                    ).first()
+                    if matching_seg:
+                        conflict = Conflict(
+                            project_id=project_id,
+                            segment_id=matching_seg.id,
+                            conflict_type=c["conflict_type"],
+                            status=c["status"],
+                            detected_text=c.get("detected_text", ""),
+                            expected_text=c.get("expected_text", ""),
+                        )
+                        db.session.add(conflict)
+
+                # Commit this chapter — editor can now show it
+                chapter.processing_status = "ready"
+                db.session.commit()
+
             # Process any unassigned audio against full manuscript text
             unassigned = AudioFile.query.filter_by(
                 project_id=project_id, chapter_id=None
@@ -381,6 +411,7 @@ def _process_project(app, project_id: int):
                             transcript_words, full_text
                         )
 
+                        chapter_segments = []
                         for seg in aligned:
                             seg["segment_index"] = global_seg_idx
                             db_seg = AlignmentSegment(
@@ -415,25 +446,25 @@ def _process_project(app, project_id: int):
                                 db.session.add(take)
 
                             global_seg_idx += 1
-                        all_segments.extend(aligned)
+                        chapter_segments.extend(aligned)
 
-            # Detect conflicts across all segments
-            conflicts = detect_conflicts(all_segments)
-            for c in conflicts:
-                matching_seg = AlignmentSegment.query.filter_by(
-                    project_id=project_id,
-                    segment_index=c["segment_index"],
-                ).first()
-                if matching_seg:
-                    conflict = Conflict(
-                        project_id=project_id,
-                        segment_id=matching_seg.id,
-                        conflict_type=c["conflict_type"],
-                        status=c["status"],
-                        detected_text=c.get("detected_text", ""),
-                        expected_text=c.get("expected_text", ""),
-                    )
-                    db.session.add(conflict)
+                        conflicts = detect_conflicts(chapter_segments)
+                        for c in conflicts:
+                            matching_seg = AlignmentSegment.query.filter_by(
+                                project_id=project_id,
+                                segment_index=c["segment_index"],
+                            ).first()
+                            if matching_seg:
+                                conflict = Conflict(
+                                    project_id=project_id,
+                                    segment_id=matching_seg.id,
+                                    conflict_type=c["conflict_type"],
+                                    status=c["status"],
+                                    detected_text=c.get("detected_text", ""),
+                                    expected_text=c.get("expected_text", ""),
+                                )
+                                db.session.add(conflict)
+                        db.session.commit()
 
             project.status = "ready"
             db.session.commit()

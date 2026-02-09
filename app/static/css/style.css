@@ -862,6 +862,212 @@ kbd {
     line-height: 1.4;
 }
 
+/* === Setup Page (TOC Editing) === */
+.setup-page { max-width: 820px; margin: 0 auto; }
+
+.setup-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+.section-header-row h2 { margin-bottom: 0; }
+
+.toc-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.toc-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.15s;
+}
+.toc-item:hover { border-color: var(--border-light); }
+
+.toc-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+}
+
+.toc-drag-handle {
+    color: var(--text-muted);
+    cursor: grab;
+    flex-shrink: 0;
+    opacity: 0.5;
+}
+.toc-drag-handle:hover { opacity: 1; }
+
+.toc-index {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    flex-shrink: 0;
+    min-width: 1.5rem;
+}
+
+.toc-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.toc-rename-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    font-family: var(--font);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--primary-bg);
+}
+
+.toc-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.toc-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.toc-boundary {
+    padding: 0.5rem 0.75rem 0.6rem;
+    padding-left: 2.5rem;
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.toc-boundary-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+    line-height: 1.4;
+}
+.toc-boundary-row:last-child { margin-bottom: 0; }
+
+.boundary-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+    padding-top: 0.1rem;
+    min-width: 5.5rem;
+}
+
+.boundary-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.toc-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.8rem;
+}
+
+.toc-empty-state {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+/* === Modal === */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 480px;
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+.modal-header h3 { font-size: 1rem; font-weight: 600; }
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+
+.modal-body { padding: 1.25rem; }
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+/* === Chapter Tab Processing States === */
+.spinner-sm {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--info);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+.chapter-tab-processing {
+    color: var(--info);
+    opacity: 0.8;
+}
+
+.chapter-tab-pending {
+    background: var(--bg-hover);
+    color: var(--text-muted);
+    font-size: 0.6rem;
+}
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
