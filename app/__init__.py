@@ -1,7 +1,8 @@
 import os
-from flask import Flask
+from flask import Flask, flash, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from werkzeug.exceptions import RequestEntityTooLarge
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -31,6 +32,12 @@ def create_app(config_name=None):
     app.register_blueprint(project_bp, url_prefix="/project")
     app.register_blueprint(editor_bp, url_prefix="/editor")
     app.register_blueprint(api_bp, url_prefix="/api")
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_file_too_large(e):
+        max_mb = app.config.get("MAX_CONTENT_LENGTH", 0) // (1024 * 1024)
+        flash(f"Upload too large. Maximum total size is {max_mb} MB.", "error")
+        return redirect(url_for("project.new"))
 
     with app.app_context():
         db.create_all()
