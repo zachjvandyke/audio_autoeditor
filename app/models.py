@@ -10,6 +10,9 @@ class Project(db.Model):
     status = db.Column(
         db.String(50), nullable=False, default="created"
     )  # created, processing, ready, exported
+    audio_mode = db.Column(
+        db.String(50), nullable=False, default="chapterized"
+    )  # chapterized, continuous
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,
@@ -42,12 +45,19 @@ class AudioFile(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False)
+    chapter_id = db.Column(
+        db.Integer, db.ForeignKey("manuscript_sections.id"), nullable=True
+    )  # which chapter this audio belongs to
     filename = db.Column(db.String(255), nullable=False)  # stored filename
     original_filename = db.Column(db.String(255), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
     duration = db.Column(db.Float, default=0.0)
     sample_rate = db.Column(db.Integer, default=44100)
     uploaded_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    chapter = db.relationship(
+        "ManuscriptSection", foreign_keys=[chapter_id], backref="audio_files"
+    )
     takes = db.relationship(
         "Take", backref="audio_file", lazy=True, cascade="all, delete-orphan"
     )
@@ -69,6 +79,9 @@ class ManuscriptSection(db.Model):
     parent_id = db.Column(
         db.Integer, db.ForeignKey("manuscript_sections.id"), nullable=True
     )
+    processing_status = db.Column(
+        db.String(50), nullable=False, default="pending"
+    )  # pending, processing, ready (for chapters)
 
     children = db.relationship(
         "ManuscriptSection", backref=db.backref("parent", remote_side="ManuscriptSection.id"),

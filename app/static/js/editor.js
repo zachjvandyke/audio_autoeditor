@@ -473,17 +473,74 @@
         const projectId = layout ? layout.dataset.projectId : null;
         if (!projectId) return;
 
-        // Check status badge
+        // Check if there are any processing/pending chapters or project is processing
         const badge = document.querySelector('.status-processing');
-        if (!badge) return;
+        const processingTabs = document.querySelectorAll('.chapter-tab[data-processing-status="processing"], .chapter-tab[data-processing-status="pending"]');
+        if (!badge && processingTabs.length === 0) return;
 
         const interval = setInterval(function() {
-            fetch('/api/project/' + projectId + '/status')
+            fetch('/api/project/' + projectId + '/chapter-status')
                 .then(r => r.json())
                 .then(function(data) {
-                    if (data.status !== 'processing') {
+                    let anyProcessing = false;
+
+                    // Update individual chapter tabs
+                    data.chapters.forEach(function(ch) {
+                        const tab = document.querySelector('.chapter-tab[data-chapter-id="' + ch.id + '"]');
+                        if (!tab) return;
+
+                        const prevStatus = tab.dataset.processingStatus;
+                        tab.dataset.processingStatus = ch.processing_status;
+
+                        if (ch.processing_status === 'processing' || ch.processing_status === 'pending') {
+                            anyProcessing = true;
+                        }
+
+                        // If a chapter just became ready, update its tab appearance
+                        if (prevStatus !== 'ready' && ch.processing_status === 'ready') {
+                            tab.classList.remove('chapter-tab-processing');
+                            // Remove spinner/pending badge
+                            const spinner = tab.querySelector('.spinner-sm');
+                            if (spinner) spinner.remove();
+                            const pendingBadge = tab.querySelector('.chapter-tab-pending');
+                            if (pendingBadge) pendingBadge.remove();
+                        }
+
+                        if (ch.processing_status === 'processing') {
+                            tab.classList.add('chapter-tab-processing');
+                            if (!tab.querySelector('.spinner-sm')) {
+                                const sp = document.createElement('span');
+                                sp.className = 'spinner spinner-sm';
+                                tab.insertBefore(sp, tab.firstChild);
+                            }
+                        }
+                    });
+
+                    // If project is done and we're viewing a chapter that was processing, reload
+                    if (data.project_status !== 'processing' && !anyProcessing) {
                         clearInterval(interval);
+                        // Update the status badge
+                        const statusBadge = document.querySelector('.status-badge');
+                        if (statusBadge) {
+                            statusBadge.className = 'status-badge status-' + data.project_status;
+                            statusBadge.textContent = data.project_status;
+                        }
+                        // Reload to get the final data
                         window.location.reload();
+                    }
+
+                    // If the active chapter just finished, reload to get its segments
+                    const activeTab = document.querySelector('.chapter-tab.active');
+                    if (activeTab) {
+                        const activeChapter = data.chapters.find(function(ch) {
+                            return String(ch.id) === activeTab.dataset.chapterId;
+                        });
+                        if (activeChapter && activeTab._prevProcessingStatus === 'processing' && activeChapter.processing_status === 'ready') {
+                            window.location.reload();
+                        }
+                        if (activeChapter) {
+                            activeTab._prevProcessingStatus = activeChapter.processing_status;
+                        }
                     }
                 })
                 .catch(() => {});

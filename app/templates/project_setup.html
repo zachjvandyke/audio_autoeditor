@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}Setup - {{ project.title }}{% endblock %}
+
+{% block content %}
+<div class="setup-page">
+    <div class="create-header">
+        <a href="{{ url_for('dashboard.index') }}" class="back-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+        </a>
+        <h1>{{ project.title }} - Setup</h1>
+    </div>
+
+    <!-- Step 1: Table of Contents -->
+    <div class="form-section setup-section">
+        <div class="section-header-row">
+            <h2>Detected Table of Contents</h2>
+            <button type="button" class="btn btn-sm btn-outline" id="addChapterBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Chapter
+            </button>
+        </div>
+        <p class="form-hint">
+            Review the detected chapters below. You can rename, remove, or add chapter headings.
+            Boundary text is shown so you can verify where each chapter starts and ends.
+        </p>
+
+        <div class="toc-list" id="tocList">
+            {% for ch in chapters %}
+            <div class="toc-item" data-chapter-id="{{ ch.id }}" data-section-index="{{ ch.section_index }}">
+                <div class="toc-header">
+                    <div class="toc-drag-handle">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+                        </svg>
+                    </div>
+                    <span class="toc-index">{{ ch.section_index + 1 }}.</span>
+                    <span class="toc-title" data-chapter-id="{{ ch.id }}">{{ ch.text_content }}</span>
+                    <input type="text" class="toc-rename-input" value="{{ ch.text_content }}" style="display:none;" data-chapter-id="{{ ch.id }}">
+                    <span class="toc-meta">{{ ch.children|length }} paragraphs</span>
+                    <div class="toc-actions">
+                        <button type="button" class="btn btn-sm btn-outline toc-rename-btn" data-chapter-id="{{ ch.id }}" title="Rename chapter">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline toc-remove-btn" data-chapter-id="{{ ch.id }}" title="Remove chapter (merge into previous)">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="toc-boundary">
+                    {% if ch.children %}
+                    <div class="toc-boundary-row">
+                        <span class="boundary-label">Starts with:</span>
+                        <span class="boundary-text">{{ ch.children[0].text_content[:200] }}{% if ch.children[0].text_content|length > 200 %}...{% endif %}</span>
+                    </div>
+                    {% if ch.children|length > 1 %}
+                    <div class="toc-boundary-row">
+                        <span class="boundary-label">Ends with:</span>
+                        <span class="boundary-text">{{ ch.children[-1].text_content[:200] }}{% if ch.children[-1].text_content|length > 200 %}...{% endif %}</span>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="toc-boundary-row">
+                        <span class="boundary-text toc-empty">No paragraphs in this chapter</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not chapters %}
+            <div class="toc-empty-state">
+                <p>No chapters detected. The manuscript will be treated as a single chapter.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Step 2: Audio Mode & Assignment -->
+    <form method="POST" action="{{ url_for('project.assign_chapters', project_id=project.id) }}" id="setupForm">
+
+        <!-- Audio Mode Toggle -->
+        <div class="form-section setup-section">
+            <h2>Audio File Mode</h2>
+            <p class="form-hint">How are your audio files organized?</p>
+
+            <div class="audio-mode-toggle">
+                <label class="mode-option" id="modeChapterized">
+                    <input type="radio" name="audio_mode" value="chapterized" {% if project.audio_mode != 'continuous' %}checked{% endif %}>
+                    <div class="mode-card">
+                        <div class="mode-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                                <line x1="8" y1="7" x2="16" y2="7"/>
+                                <line x1="8" y1="11" x2="13" y2="11"/>
+                            </svg>
+                        </div>
+                        <div class="mode-info">
+                            <strong>Chapterized</strong>
+                            <span>Each audio file corresponds to one chapter. Assign files to chapters below.</span>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="mode-option" id="modeContinuous">
+                    <input type="radio" name="audio_mode" value="continuous" {% if project.audio_mode == 'continuous' %}checked{% endif %}>
+                    <div class="mode-card">
+                        <div class="mode-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18V5l12-2v13"/>
+                                <circle cx="6" cy="18" r="3"/>
+                                <circle cx="18" cy="16" r="3"/>
+                            </svg>
+                        </div>
+                        <div class="mode-info">
+                            <strong>Continuous</strong>
+                            <span>Audio files are one long stream (single file, or split at arbitrary points). Chapter boundaries are detected automatically.</span>
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Chapterized: Audio-to-Chapter Assignment -->
+        <div class="form-section setup-section" id="chapterizedSection">
+            <h2>Audio Files &rarr; Chapters</h2>
+            <p class="form-hint">Assign each audio file to the chapter it belongs to. Files have been auto-matched by filename where possible.</p>
+
+            {% if audio_files %}
+            <div class="assignment-list" id="assignmentList">
+                {% for af in audio_files %}
+                <div class="assignment-row">
+                    <div class="assignment-audio">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                        </svg>
+                        <div class="assignment-audio-info">
+                            <span class="assignment-filename">{{ af.original_filename }}</span>
+                            {% if af.duration > 0 %}
+                            <span class="assignment-duration">{{ '%d:%02d'|format(af.duration // 60, af.duration % 60) }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="assignment-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                    </div>
+                    <div class="assignment-chapter">
+                        <select name="audio_chapter_{{ af.id }}" class="form-input chapter-select">
+                            <option value="">-- Unassigned --</option>
+                            {% for ch in chapters %}
+                            <option value="{{ ch.id }}" {% if af.chapter_id == ch.id %}selected{% endif %}>
+                                {{ ch.text_content }}
+                                {% if ch.children %} ({{ ch.children|length }} paragraphs){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted">No audio files uploaded.</p>
+            {% endif %}
+        </div>
+
+        <!-- Continuous: Audio File Order -->
+        <div class="form-section setup-section" id="continuousSection" style="display:none;">
+            <h2>Audio File Order</h2>
+            <p class="form-hint">
+                Your audio will be treated as one continuous stream. Verify the playback order below.
+                The alignment engine will automatically match audio to the manuscript text and detect chapter boundaries within the audio.
+            </p>
+
+            {% if audio_files %}
+            <div class="continuous-file-list">
+                {% for af in audio_files %}
+                <div class="continuous-file-row">
+                    <span class="continuous-file-num">{{ loop.index }}</span>
+                    <div class="assignment-audio">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                        </svg>
+                        <div class="assignment-audio-info">
+                            <span class="assignment-filename">{{ af.original_filename }}</span>
+                            {% if af.duration > 0 %}
+                            <span class="assignment-duration">{{ '%d:%02d'|format(af.duration // 60, af.duration % 60) }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                <div class="continuous-total">
+                    Total duration: {{ '%d:%02d:%02d'|format(
+                        audio_files|map(attribute='duration')|sum // 3600,
+                        (audio_files|map(attribute='duration')|sum % 3600) // 60,
+                        audio_files|map(attribute='duration')|sum % 60
+                    ) }}
+                </div>
+            </div>
+            {% else %}
+            <p class="muted">No audio files uploaded.</p>
+            {% endif %}
+        </div>
+
+        <div class="form-actions">
+            <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary btn-lg" id="processBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Process Audio
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Add Chapter Modal -->
+<div class="modal-overlay" id="addChapterModal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add Chapter</h3>
+            <button type="button" class="modal-close" id="closeModal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="newChapterTitle">Chapter Title</label>
+                <input type="text" id="newChapterTitle" class="form-input" placeholder="e.g., Chapter 5" value="New Chapter">
+            </div>
+            <div class="form-group">
+                <label for="afterChapter">Insert After</label>
+                <select id="afterChapter" class="form-input">
+                    <option value="">-- Beginning --</option>
+                    {% for ch in chapters %}
+                    <option value="{{ ch.id }}">{{ ch.text_content }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" id="cancelModal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="confirmAddChapter">Add Chapter</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    var projectId = {{ project.id }};
+
+    // ========================
+    // Audio Mode Toggle
+    // ========================
+    var chapterizedSection = document.getElementById('chapterizedSection');
+    var continuousSection = document.getElementById('continuousSection');
+    var modeRadios = document.querySelectorAll('input[name="audio_mode"]');
+
+    function updateModeView() {
+        var mode = document.querySelector('input[name="audio_mode"]:checked').value;
+        if (mode === 'continuous') {
+            chapterizedSection.style.display = 'none';
+            continuousSection.style.display = '';
+        } else {
+            chapterizedSection.style.display = '';
+            continuousSection.style.display = 'none';
+        }
+    }
+
+    modeRadios.forEach(function(radio) {
+        radio.addEventListener('change', updateModeView);
+    });
+
+    // Initialize view on load
+    updateModeView();
+
+    // ========================
+    // Rename Chapter
+    // ========================
+    document.querySelectorAll('.toc-rename-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var chapterId = this.dataset.chapterId;
+            var titleSpan = document.querySelector('.toc-title[data-chapter-id="' + chapterId + '"]');
+            var input = document.querySelector('.toc-rename-input[data-chapter-id="' + chapterId + '"]');
+
+            if (input.style.display === 'none') {
+                titleSpan.style.display = 'none';
+                input.style.display = '';
+                input.focus();
+                input.select();
+            } else {
+                saveRename(chapterId, input, titleSpan);
+            }
+        });
+    });
+
+    document.querySelectorAll('.toc-rename-input').forEach(function(input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var chapterId = this.dataset.chapterId;
+                var titleSpan = document.querySelector('.toc-title[data-chapter-id="' + chapterId + '"]');
+                saveRename(chapterId, this, titleSpan);
+            }
+            if (e.key === 'Escape') {
+                var chapterId = this.dataset.chapterId;
+                var titleSpan = document.querySelector('.toc-title[data-chapter-id="' + chapterId + '"]');
+                this.value = titleSpan.textContent;
+                this.style.display = 'none';
+                titleSpan.style.display = '';
+            }
+        });
+
+        input.addEventListener('blur', function() {
+            var chapterId = this.dataset.chapterId;
+            var titleSpan = document.querySelector('.toc-title[data-chapter-id="' + chapterId + '"]');
+            saveRename(chapterId, this, titleSpan);
+        });
+    });
+
+    function saveRename(chapterId, input, titleSpan) {
+        var newTitle = input.value.trim();
+        if (!newTitle) {
+            input.value = titleSpan.textContent;
+            input.style.display = 'none';
+            titleSpan.style.display = '';
+            return;
+        }
+
+        fetch('/api/chapter/' + chapterId + '/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            titleSpan.textContent = data.title;
+            input.style.display = 'none';
+            titleSpan.style.display = '';
+            updateChapterSelects();
+        })
+        .catch(function(err) { console.error('Rename failed:', err); });
+    }
+
+    // ========================
+    // Remove Chapter
+    // ========================
+    document.querySelectorAll('.toc-remove-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var chapterId = this.dataset.chapterId;
+            var item = this.closest('.toc-item');
+            var title = item.querySelector('.toc-title').textContent;
+
+            if (!confirm('Remove "' + title + '"? Its paragraphs will be merged into the adjacent chapter.')) {
+                return;
+            }
+
+            fetch('/api/chapter/' + chapterId + '/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                window.location.reload();
+            })
+            .catch(function(err) { console.error('Remove failed:', err); });
+        });
+    });
+
+    // ========================
+    // Add Chapter Modal
+    // ========================
+    var modal = document.getElementById('addChapterModal');
+
+    document.getElementById('addChapterBtn').addEventListener('click', function() {
+        modal.style.display = 'flex';
+        document.getElementById('newChapterTitle').focus();
+    });
+
+    document.getElementById('closeModal').addEventListener('click', function() {
+        modal.style.display = 'none';
+    });
+
+    document.getElementById('cancelModal').addEventListener('click', function() {
+        modal.style.display = 'none';
+    });
+
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) modal.style.display = 'none';
+    });
+
+    document.getElementById('confirmAddChapter').addEventListener('click', function() {
+        var title = document.getElementById('newChapterTitle').value.trim();
+        var afterId = document.getElementById('afterChapter').value;
+
+        if (!title) {
+            alert('Please enter a chapter title.');
+            return;
+        }
+
+        var body = { title: title };
+        if (afterId) body.after_chapter_id = parseInt(afterId);
+
+        fetch('/api/project/' + projectId + '/chapter/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            window.location.reload();
+        })
+        .catch(function(err) { console.error('Add chapter failed:', err); });
+    });
+
+    // ========================
+    // Update chapter selects after rename
+    // ========================
+    function updateChapterSelects() {
+        fetch('/api/project/' + projectId + '/chapters')
+            .then(function(r) { return r.json(); })
+            .then(function(chapters) {
+                document.querySelectorAll('.chapter-select').forEach(function(select) {
+                    var currentVal = select.value;
+                    select.innerHTML = '<option value="">-- Unassigned --</option>';
+                    chapters.forEach(function(ch) {
+                        var opt = document.createElement('option');
+                        opt.value = ch.id;
+                        opt.textContent = ch.title + ' (' + ch.paragraph_count + ' paragraphs)';
+                        if (String(ch.id) === currentVal) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                });
+            })
+            .catch(function(err) { console.error('Failed to refresh chapters:', err); });
+    }
+
+    // ========================
+    // Form Submit
+    // ========================
+    document.getElementById('setupForm').addEventListener('submit', function() {
+        var btn = document.getElementById('processBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Processing...';
+    });
+
+})();
+</script>
+{% endblock %}
