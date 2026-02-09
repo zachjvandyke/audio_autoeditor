@@ -222,31 +222,37 @@
     </form>
 </div>
 
-<!-- Add Chapter Modal -->
+<!-- Add Chapter / Split Modal -->
 <div class="modal-overlay" id="addChapterModal" style="display:none;">
-    <div class="modal-content">
+    <div class="modal-content modal-wide">
         <div class="modal-header">
-            <h3>Add Chapter</h3>
+            <h3>Split Chapter</h3>
             <button type="button" class="modal-close" id="closeModal">&times;</button>
         </div>
         <div class="modal-body">
             <div class="form-group">
-                <label for="newChapterTitle">Chapter Title</label>
-                <input type="text" id="newChapterTitle" class="form-input" placeholder="e.g., Chapter 5" value="New Chapter">
+                <label for="newChapterTitle">New Chapter Title</label>
+                <input type="text" id="newChapterTitle" class="form-input" placeholder="e.g., Chapter 5">
             </div>
             <div class="form-group">
-                <label for="afterChapter">Insert After</label>
-                <select id="afterChapter" class="form-input">
-                    <option value="">-- Beginning --</option>
+                <label for="sourceChapter">Split From</label>
+                <select id="sourceChapter" class="form-input">
                     {% for ch in chapters %}
-                    <option value="{{ ch.id }}">{{ ch.text_content }}</option>
+                    <option value="{{ ch.id }}">{{ ch.text_content }} ({{ ch.children|length }} paragraphs)</option>
                     {% endfor %}
                 </select>
             </div>
+            <div class="form-group">
+                <label>Click a paragraph to set the split point. Everything from that paragraph onward becomes the new chapter.</label>
+                <div class="split-para-list" id="splitParaList">
+                    <div class="split-para-loading">Select a chapter above to see its paragraphs.</div>
+                </div>
+            </div>
+            <input type="hidden" id="splitParagraphId" value="">
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" id="cancelModal">Cancel</button>
-            <button type="button" class="btn btn-primary" id="confirmAddChapter">Add Chapter</button>
+            <button type="button" class="btn btn-primary" id="confirmAddChapter" disabled>Split Chapter</button>
         </div>
     </div>
 </div>
@@ -384,13 +390,22 @@
     });
 
     // ========================
-    // Add Chapter Modal
+    // Add/Split Chapter Modal
     // ========================
     var modal = document.getElementById('addChapterModal');
+    var sourceChapterSelect = document.getElementById('sourceChapter');
+    var splitParaList = document.getElementById('splitParaList');
+    var splitParagraphId = document.getElementById('splitParagraphId');
+    var confirmBtn = document.getElementById('confirmAddChapter');
 
     document.getElementById('addChapterBtn').addEventListener('click', function() {
         modal.style.display = 'flex';
-        document.getElementById('newChapterTitle').focus();
+        splitParagraphId.value = '';
+        confirmBtn.disabled = true;
+        // Load paragraphs for the first chapter
+        if (sourceChapterSelect.value) {
+            loadParagraphs(sourceChapterSelect.value);
+        }
     });
 
     document.getElementById('closeModal').addEventListener('click', function() {
@@ -405,17 +420,105 @@
         if (e.target === modal) modal.style.display = 'none';
     });
 
-    document.getElementById('confirmAddChapter').addEventListener('click', function() {
+    // Load paragraphs when source chapter changes
+    sourceChapterSelect.addEventListener('change', function() {
+        splitParagraphId.value = '';
+        confirmBtn.disabled = true;
+        loadParagraphs(this.value);
+    });
+
+    function loadParagraphs(chapterId) {
+        splitParaList.innerHTML = '<div class="split-para-loading">Loading paragraphs...</div>';
+
+        fetch('/api/chapter/' + chapterId + '/paragraphs')
+            .then(function(r) { return r.json(); })
+            .then(function(paras) {
+                if (paras.length === 0) {
+                    splitParaList.innerHTML = '<div class="split-para-loading">This chapter has no paragraphs.</div>';
+                    return;
+                }
+                if (paras.length < 2) {
+                    splitParaList.innerHTML = '<div class="split-para-loading">This chapter only has one paragraph and cannot be split.</div>';
+                    return;
+                }
+
+                splitParaList.innerHTML = '';
+
+                paras.forEach(function(p, idx) {
+                    var row = document.createElement('div');
+                    row.className = 'split-para-row';
+                    row.dataset.paraId = p.id;
+
+                    // Don't allow splitting before the first paragraph (that would leave the source empty)
+                    if (idx === 0) {
+                        row.classList.add('split-para-disabled');
+                        row.innerHTML =
+                            '<span class="split-para-num">' + (idx + 1) + '</span>' +
+                            '<span class="split-para-text">' + escapeHtml(p.text) + '</span>';
+                        splitParaList.appendChild(row);
+                        return;
+                    }
+
+                    row.innerHTML =
+                        '<span class="split-para-num">' + (idx + 1) + '</span>' +
+                        '<span class="split-para-text">' + escapeHtml(p.text) + '</span>';
+
+                    row.addEventListener('click', function() {
+                        // Deselect previous
+                        var prev = splitParaList.querySelector('.split-para-selected');
+                        if (prev) prev.classList.remove('split-para-selected');
+
+                        // Select this one
+                        this.classList.add('split-para-selected');
+                        splitParagraphId.value = p.id;
+                        confirmBtn.disabled = false;
+
+                        // Show split line
+                        var oldLine = splitParaList.querySelector('.split-line');
+                        if (oldLine) oldLine.remove();
+                        var line = document.createElement('div');
+                        line.className = 'split-line';
+                        line.innerHTML = '<span>New chapter starts here</span>';
+                        this.parentNode.insertBefore(line, this);
+                    });
+
+                    splitParaList.appendChild(row);
+                });
+            })
+            .catch(function(err) {
+                console.error('Failed to load paragraphs:', err);
+                splitParaList.innerHTML = '<div class="split-para-loading">Failed to load paragraphs.</div>';
+            });
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    confirmBtn.addEventListener('click', function() {
         var title = document.getElementById('newChapterTitle').value.trim();
-        var afterId = document.getElementById('afterChapter').value;
+        var sourceId = sourceChapterSelect.value;
+        var paraId = splitParagraphId.value;
 
         if (!title) {
             alert('Please enter a chapter title.');
             return;
         }
+        if (!paraId) {
+            alert('Please select a paragraph where the new chapter should start.');
+            return;
+        }
 
-        var body = { title: title };
-        if (afterId) body.after_chapter_id = parseInt(afterId);
+        var body = {
+            title: title,
+            after_chapter_id: parseInt(sourceId),
+            split_paragraph_id: parseInt(paraId)
+        };
+
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Splitting...';
 
         fetch('/api/project/' + projectId + '/chapter/add', {
             method: 'POST',
@@ -426,11 +529,17 @@
         .then(function(data) {
             if (data.error) {
                 alert(data.error);
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Split Chapter';
                 return;
             }
             window.location.reload();
         })
-        .catch(function(err) { console.error('Add chapter failed:', err); });
+        .catch(function(err) {
+            console.error('Split chapter failed:', err);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Split Chapter';
+        });
     });
 
     // ========================
