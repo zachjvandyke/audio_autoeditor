@@ -420,8 +420,9 @@ def _process_chapterized(app, project_id: int):
 
 
 def _process_continuous(app, project_id: int):
-    """Process continuous audio: transcribe all files as one stream, then align
-    against the full manuscript and split results into chapters by text position.
+    """Process continuous audio: each file is independently aligned against the
+    full manuscript text (ignoring chapter boundaries), then each file is paired
+    to the chapter it best matches based on where its aligned words fall.
 
     This handles single-file recordings, arbitrarily-split files, or any audio
     that doesn't align 1:1 with chapters.
@@ -448,54 +449,10 @@ def _process_continuous(app, project_id: int):
         db.session.commit()
         return
 
-    # Step 1: Transcribe all audio files sequentially, tracking cumulative offset.
-    # Each word gets a "global" time (relative to the combined audio stream)
-    # plus a reference to which audio file it came from and its local time.
-    all_transcript_words = []  # combined transcript
-    audio_boundaries = []  # [(audio_file, global_start, global_end), ...]
-    cumulative_offset = 0.0
-
-    for audio in audio_files:
-        filepath = os.path.join(upload_folder, audio.filename)
-        if not os.path.exists(filepath):
-            continue
-
-        local_words = transcribe_audio(filepath, manuscript_text=full_text)
-
-        file_duration = audio.duration if audio.duration > 0 else (
-            local_words[-1]["end"] if local_words else 0.0
-        )
-
-        audio_boundaries.append({
-            "audio_file": audio,
-            "global_start": cumulative_offset,
-            "global_end": cumulative_offset + file_duration,
-        })
-
-        # Add words with global timestamps and audio file reference
-        for w in local_words:
-            all_transcript_words.append({
-                "word": w["word"],
-                "start": w["start"] + cumulative_offset,
-                "end": w["end"] + cumulative_offset,
-                "confidence": w["confidence"],
-                "local_start": w["start"],
-                "local_end": w["end"],
-                "audio_file_id": audio.id,
-            })
-
-        cumulative_offset += file_duration
-
-    if not all_transcript_words:
-        for chapter in chapters:
-            chapter.processing_status = "ready"
-        db.session.commit()
-        return
-
-    # Step 2: Build the full manuscript text and a word-to-paragraph map.
-    # We need to know which manuscript word index belongs to which paragraph/chapter.
+    # Step 1: Build the full manuscript text and word-to-paragraph/chapter map.
+    # This is the reference text that ALL audio files will be aligned against.
     all_paragraphs = []
-    para_word_ranges = []  # [(para, start_word_idx, end_word_idx), ...]
+    para_word_ranges = []  # [(para, chapter, word_start, word_end), ...]
     full_words = []
 
     for chapter in chapters:
@@ -519,98 +476,124 @@ def _process_continuous(app, project_id: int):
         db.session.commit()
         return
 
-    # Step 3: Align the full transcript against the full manuscript
-    aligned = align_transcript_to_manuscript(all_transcript_words, full_text)
-
-    # Step 4: Store aligned segments, assigning each to the correct paragraph/chapter
-    # and the correct audio file based on its timing.
-    global_seg_idx = 0
-    # Track which manuscript word we're at based on expected_text sequence
-    manuscript_word_cursor = 0
-
-    # Pre-build a lookup: for a given manuscript word index, which paragraph/chapter?
     def _find_para_for_manuscript_word(word_idx):
-        for para, chapter, w_start, w_end in para_word_ranges:
+        """Given a manuscript word index, return (paragraph, chapter)."""
+        for para, ch, w_start, w_end in para_word_ranges:
             if w_start <= word_idx < w_end:
-                return para, chapter
-        # Default to last paragraph
+                return para, ch
         if para_word_ranges:
             return para_word_ranges[-1][0], para_word_ranges[-1][1]
         return None, None
 
-    # Pre-build a lookup: for a given global time, which audio file?
-    def _find_audio_for_time(global_time):
-        for boundary in audio_boundaries:
-            if boundary["global_start"] <= global_time <= boundary["global_end"] + 0.1:
-                return boundary["audio_file"]
-        # Default to closest
-        if audio_boundaries:
-            return audio_boundaries[-1]["audio_file"]
-        return audio_files[0] if audio_files else None
+    # Step 2: Process each audio file independently against the full manuscript.
+    global_seg_idx = 0
+    chapter_aligned = {ch.id: [] for ch in chapters}  # for conflict detection
+    chapter_file_counts = {ch.id: 0 for ch in chapters}  # track files per chapter
+    chapters_ready = set()
 
-    # Group aligned segments by chapter for conflict detection
-    chapter_aligned = {ch.id: [] for ch in chapters}
+    for audio in audio_files:
+        filepath = os.path.join(upload_folder, audio.filename)
+        if not os.path.exists(filepath):
+            continue
 
-    for seg in aligned:
-        seg["segment_index"] = global_seg_idx
+        # Transcribe this file
+        transcript_words = transcribe_audio(filepath, manuscript_text=full_text)
+        if not transcript_words:
+            continue
 
-        # Determine which audio file this segment's time falls within
-        audio_file = _find_audio_for_time(seg["start_time"])
-        audio_file_id = audio_file.id if audio_file else None
+        # Align this file's transcript against the full manuscript
+        aligned = align_transcript_to_manuscript(transcript_words, full_text)
 
-        # Convert global time back to local time for the audio file
-        local_start = seg["start_time"]
-        local_end = seg["end_time"]
-        if audio_file:
-            for boundary in audio_boundaries:
-                if boundary["audio_file"].id == audio_file_id:
-                    local_start = seg["start_time"] - boundary["global_start"]
-                    local_end = seg["end_time"] - boundary["global_start"]
-                    break
+        # Track which chapters this file's segments fall into
+        file_chapter_hits = {}  # chapter_id -> count of matched words
+        manuscript_word_cursor = 0
 
-        # Determine which paragraph this segment belongs to
-        para, chapter = _find_para_for_manuscript_word(manuscript_word_cursor)
-        para_id = para.id if para else None
-        chapter_id_for_seg = chapter.id if chapter else None
+        file_segments = []
+        for seg in aligned:
+            seg["segment_index"] = global_seg_idx
 
-        # Advance manuscript word cursor for non-extra words
-        if seg.get("expected_text") and seg.get("alignment") != "extra":
-            manuscript_word_cursor += 1
+            # Determine which paragraph/chapter this word maps to
+            para, chapter = _find_para_for_manuscript_word(manuscript_word_cursor)
+            para_id = para.id if para else None
+            chapter_id_for_seg = chapter.id if chapter else None
 
-        db_seg = AlignmentSegment(
-            project_id=project_id,
-            audio_file_id=audio_file_id,
-            manuscript_section_id=para_id,
-            text=seg["text"],
-            expected_text=seg["expected_text"],
-            start_time=local_start,
-            end_time=local_end,
-            confidence=seg["confidence"],
-            segment_type=seg["segment_type"],
-            segment_index=global_seg_idx,
-        )
-        db.session.add(db_seg)
-        db.session.flush()
+            # Advance cursor for words that map to manuscript text
+            if seg.get("expected_text") and seg.get("alignment") != "extra":
+                manuscript_word_cursor += 1
 
-        if local_start != local_end:
-            take = Take(
+            # Count chapter hits for best-match assignment
+            if chapter_id_for_seg and seg.get("alignment") in ("match", "mismatch"):
+                file_chapter_hits[chapter_id_for_seg] = (
+                    file_chapter_hits.get(chapter_id_for_seg, 0) + 1
+                )
+
+            db_seg = AlignmentSegment(
                 project_id=project_id,
-                segment_id=db_seg.id,
-                audio_file_id=audio_file_id or (audio_files[0].id if audio_files else 0),
-                start_time=local_start,
-                end_time=local_end,
-                take_number=1,
-                is_selected=True,
+                audio_file_id=audio.id,
+                manuscript_section_id=para_id,
+                text=seg["text"],
+                expected_text=seg["expected_text"],
+                start_time=seg["start_time"],
+                end_time=seg["end_time"],
                 confidence=seg["confidence"],
+                segment_type=seg["segment_type"],
+                segment_index=global_seg_idx,
             )
-            db.session.add(take)
+            db.session.add(db_seg)
+            db.session.flush()
 
-        if chapter_id_for_seg:
-            chapter_aligned[chapter_id_for_seg].append(seg)
+            if seg["start_time"] != seg["end_time"]:
+                take = Take(
+                    project_id=project_id,
+                    segment_id=db_seg.id,
+                    audio_file_id=audio.id,
+                    start_time=seg["start_time"],
+                    end_time=seg["end_time"],
+                    take_number=1,
+                    is_selected=True,
+                    confidence=seg["confidence"],
+                )
+                db.session.add(take)
 
-        global_seg_idx += 1
+            if chapter_id_for_seg:
+                chapter_aligned[chapter_id_for_seg].append(seg)
 
-    # Step 5: Detect conflicts per chapter and commit chapter by chapter
+            file_segments.append(seg)
+            global_seg_idx += 1
+
+        # Auto-assign this audio file to the chapter with the most matched words
+        if file_chapter_hits:
+            best_chapter_id = max(file_chapter_hits, key=file_chapter_hits.get)
+            audio.chapter_id = best_chapter_id
+            chapter_file_counts[best_chapter_id] = (
+                chapter_file_counts.get(best_chapter_id, 0) + 1
+            )
+
+        # Detect retakes within this file
+        retakes = detect_retakes(transcript_words, full_text)
+        for group in retakes:
+            for i, take_info in enumerate(group["takes"]):
+                existing = AlignmentSegment.query.filter_by(
+                    project_id=project_id,
+                    audio_file_id=audio.id,
+                    start_time=take_info["start_time"],
+                ).first()
+                if existing:
+                    take = Take(
+                        project_id=project_id,
+                        segment_id=existing.id,
+                        audio_file_id=audio.id,
+                        start_time=take_info["start_time"],
+                        end_time=take_info["end_time"],
+                        take_number=i + 1,
+                        is_selected=(i == 0),
+                        confidence=take_info["confidence"],
+                    )
+                    db.session.add(take)
+
+        db.session.commit()
+
+    # Step 3: Detect conflicts per chapter and mark chapters as ready
     for chapter in chapters:
         ch_segments = chapter_aligned.get(chapter.id, [])
         if ch_segments:
@@ -633,38 +616,6 @@ def _process_continuous(app, project_id: int):
 
         chapter.processing_status = "ready"
         db.session.commit()
-
-    # Detect retakes across the full transcript
-    for boundary in audio_boundaries:
-        audio = boundary["audio_file"]
-        # Get the local words for this audio file
-        local_words = [
-            {"word": w["word"], "start": w["local_start"], "end": w["local_end"],
-             "confidence": w["confidence"]}
-            for w in all_transcript_words if w["audio_file_id"] == audio.id
-        ]
-        if local_words:
-            retakes = detect_retakes(local_words, full_text)
-            for group in retakes:
-                for i, take_info in enumerate(group["takes"]):
-                    existing = AlignmentSegment.query.filter_by(
-                        project_id=project_id,
-                        audio_file_id=audio.id,
-                        start_time=take_info["start_time"],
-                    ).first()
-                    if existing:
-                        take = Take(
-                            project_id=project_id,
-                            segment_id=existing.id,
-                            audio_file_id=audio.id,
-                            start_time=take_info["start_time"],
-                            end_time=take_info["end_time"],
-                            take_number=i + 1,
-                            is_selected=(i == 0),
-                            confidence=take_info["confidence"],
-                        )
-                        db.session.add(take)
-            db.session.commit()
 
 
 def _process_unassigned_audio(project_id: int, upload_folder: str, global_seg_idx: int):
