@@ -9,6 +9,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import unicodedata
 
 from app.services.audio import convert_to_wav
 
@@ -389,12 +390,35 @@ def detect_retakes(transcript_words: list[dict], manuscript_text: str) -> list[d
 
 
 def _normalize_word(word: str) -> str:
-    """Normalize a word for comparison."""
+    """Normalize a word for comparison.
+
+    Applies Unicode normalization, replaces typographic variants (smart quotes,
+    em-dashes, ligatures, etc.) with ASCII equivalents, lowercases, and strips
+    punctuation so that minor formatting differences don't cause false mismatches.
+    """
+    word = _normalize_characters(word)
     return re.sub(r"[^\w']", "", word.lower().strip())
+
+
+def _normalize_characters(text: str) -> str:
+    """Replace typographic and Unicode variants with plain ASCII equivalents."""
+    # Decompose Unicode characters (e.g. accented chars -> base + combining mark)
+    text = unicodedata.normalize("NFKD", text)
+    # Strip combining marks (accents, diacritics)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    # Smart/curly quotes -> straight
+    text = text.replace("\u2018", "'").replace("\u2019", "'")  # single
+    text = text.replace("\u201c", '"').replace("\u201d", '"')  # double
+    # Dashes -> hyphen
+    text = text.replace("\u2013", "-").replace("\u2014", "-")  # en/em dash
+    # Ellipsis -> three dots
+    text = text.replace("\u2026", "...")
+    return text
 
 
 def _normalize_text_to_words(text: str) -> list[str]:
     """Extract and normalize words from text."""
+    text = _normalize_characters(text)
     cleaned = re.sub(r"[^\w\s']", " ", text)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return [_normalize_word(w) for w in cleaned.split() if _normalize_word(w)]
