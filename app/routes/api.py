@@ -337,6 +337,22 @@ def rename_chapter(chapter_id):
     return jsonify({"id": chapter.id, "title": new_title})
 
 
+@api_bp.route("/chapter/<int:chapter_id>/paragraphs")
+def get_chapter_paragraphs(chapter_id):
+    """Get all paragraphs for a chapter, used by the split-point picker."""
+    chapter = ManuscriptSection.query.get_or_404(chapter_id)
+    paras = ManuscriptSection.query.filter_by(
+        parent_id=chapter.id, section_type="paragraph"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    return jsonify([{
+        "id": p.id,
+        "section_index": p.section_index,
+        "text": p.text_content[:300],
+        "full_length": len(p.text_content),
+    } for p in paras])
+
+
 @api_bp.route("/project/<int:project_id>/chapter-status")
 def chapter_processing_status(project_id):
     """Get per-chapter processing status for polling."""

@@ -150,6 +150,7 @@ def export(project_id):
 
         for af in ch_audio:
             all_af_data.append({
+                "audio_file_id": af.id,
                 "path": os.path.join(upload_folder, af.filename),
                 "filename": af.original_filename,
                 "duration": af.duration,
@@ -174,6 +175,7 @@ def export(project_id):
                     "segment_type": s.segment_type,
                     "segment_index": s.segment_index,
                     "alignment": _infer_alignment(s),
+                    "audio_file_id": s.audio_file_id,
                     "chapter": ch.text_content,
                 })
 
@@ -198,6 +200,7 @@ def export(project_id):
     ).all()
     for af in unassigned_audio:
         all_af_data.append({
+            "audio_file_id": af.id,
             "path": os.path.join(upload_folder, af.filename),
             "filename": af.original_filename,
             "duration": af.duration,

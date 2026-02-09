@@ -1046,6 +1046,86 @@ kbd {
     border-top: 1px solid var(--border);
 }
 
+/* === Wide Modal Variant === */
+.modal-wide { max-width: 640px; }
+
+/* === Split Point Paragraph Picker === */
+.split-para-list {
+    max-height: 340px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+}
+
+.split-para-loading {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.split-para-row {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s;
+    align-items: flex-start;
+}
+.split-para-row:last-child { border-bottom: none; }
+.split-para-row:hover { background: var(--bg-hover); }
+
+.split-para-row.split-para-disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.split-para-row.split-para-disabled:hover { background: transparent; }
+
+.split-para-row.split-para-selected {
+    background: var(--primary-bg);
+    border-color: var(--primary);
+}
+
+.split-para-num {
+    flex-shrink: 0;
+    min-width: 1.5rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    padding-top: 0.15rem;
+    text-align: right;
+}
+
+.split-para-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.split-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.15rem 0.75rem;
+    background: var(--primary-bg);
+    border-top: 2px dashed var(--primary);
+}
+
+.split-line span {
+    font-size: 0.7rem;
+    color: var(--primary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
 /* === Chapter Tab Processing States === */
 .spinner-sm {
     display: inline-block;
