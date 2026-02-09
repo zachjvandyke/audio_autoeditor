@@ -55,7 +55,8 @@ def create_marker(index: int, position: float, name: str, color: int = 0) -> str
 
 
 def build_conformed_items(
-    audio_path: str,
+    audio_path_map: dict[int, str],
+    default_audio_path: str,
     segments: list[dict],
     conflicts: list[dict] | None = None,
 ) -> str:
@@ -63,6 +64,12 @@ def build_conformed_items(
 
     Each segment becomes a separate item positioned according to its alignment.
     Segments marked as 'needs_edit' are muted.
+
+    Args:
+        audio_path_map: Mapping of audio_file_id -> file path.
+        default_audio_path: Fallback path when segment has no audio_file_id.
+        segments: Aligned segment dicts (must include 'audio_file_id').
+        conflicts: Optional conflict dicts.
     """
     conflict_map = {}
     if conflicts:
@@ -82,6 +89,10 @@ def build_conformed_items(
 
         if length <= 0:
             continue
+
+        # Look up the correct audio file for this segment
+        seg_audio_id = seg.get("audio_file_id")
+        audio_path = audio_path_map.get(seg_audio_id, default_audio_path) if seg_audio_id else default_audio_path
 
         seg_idx = seg.get("segment_index", 0)
         conflict = conflict_map.get(seg_idx)
@@ -157,10 +168,19 @@ def export_rpp(
                 items, name=f"Reference - {af.get('filename', f'Audio {i+1}')}", mute=1
             ))
 
+    # Build audio path lookup: audio_file_id -> filesystem path
+    audio_path_map = {}
+    for af in audio_files:
+        af_id = af.get("audio_file_id")
+        if af_id is not None:
+            audio_path_map[af_id] = af.get("path", "")
+    default_audio = audio_files[0].get("path", "") if audio_files else ""
+
     # Track 2: Conformed edit (segments assembled in order)
     if segments and audio_files:
-        primary_audio = audio_files[0].get("path", "")
-        conformed_items = build_conformed_items(primary_audio, segments, conflicts)
+        conformed_items = build_conformed_items(
+            audio_path_map, default_audio, segments, conflicts
+        )
         if conformed_items:
             tracks.append(create_track(conformed_items, name="Conformed Edit"))
 
@@ -177,9 +197,11 @@ def export_rpp(
                 start = seg.get("start_time", 0)
                 end = seg.get("end_time", 0)
                 length = end - start
-                if length > 0 and audio_files:
+                if length > 0:
+                    seg_audio_id = seg.get("audio_file_id")
+                    audio_path = audio_path_map.get(seg_audio_id, default_audio) if seg_audio_id else default_audio
                     flagged_items.append(create_simple_item(
-                        audio_files[0]["path"], position, length, soffs=start,
+                        audio_path, position, length, soffs=start,
                         name=f"[EDIT] {seg.get('text', '')}",
                     ))
                     position += length + 0.1  # small gap between flagged items
