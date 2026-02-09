@@ -13,8 +13,16 @@ import re
 from app.services.audio import convert_to_wav
 
 
-def transcribe_audio(audio_path: str, model_size: str = "base") -> list[dict]:
+def transcribe_audio(
+    audio_path: str, model_size: str = "base", manuscript_text: str = ""
+) -> list[dict]:
     """Transcribe audio file and return word-level timestamps.
+
+    Args:
+        audio_path: Path to the audio file.
+        model_size: Whisper model size (tiny, base, small, medium, large).
+        manuscript_text: Optional manuscript text used only by the simulation
+            fallback to produce realistic output for development/testing.
 
     Returns list of dicts: [{"word": str, "start": float, "end": float, "confidence": float}, ...]
     """
@@ -27,7 +35,7 @@ def transcribe_audio(audio_path: str, model_size: str = "base") -> list[dict]:
     if words is not None:
         return words
 
-    return _simulated_transcription(audio_path)
+    return _simulated_transcription(audio_path, manuscript_text)
 
 
 def _try_faster_whisper(audio_path: str, model_size: str) -> list[dict] | None:
@@ -77,32 +85,137 @@ def _try_openai_whisper(audio_path: str, model_size: str) -> list[dict] | None:
         return None
 
 
-def _simulated_transcription(audio_path: str) -> list[dict]:
-    """Fallback: generate simulated word timings for development/testing.
+def _simulated_transcription(
+    audio_path: str, manuscript_text: str = ""
+) -> list[dict]:
+    """Fallback: generate simulated transcription for development/testing.
 
-    Creates plausible word timings based on audio duration.
+    When manuscript_text is provided, simulates a realistic reading of it:
+    - Most words match the manuscript (~92% accuracy)
+    - Some words are "misread" (replaced with a similar-sounding word)
+    - Occasional words are skipped (simulating mumbled/swallowed words)
+    - Occasional extra words are inserted (um, uh, repeated words)
+    - A retake section is inserted once to test retake detection
+    - Confidence varies realistically
+
+    When no manuscript_text is provided, falls back to placeholder words.
     """
+    import hashlib
+    import random
+
     from app.services.audio import get_duration_ffprobe
 
     duration = get_duration_ffprobe(audio_path)
     if duration <= 0:
-        duration = 60.0  # default for testing
+        duration = 60.0
 
-    # Generate placeholder words at ~2.5 words/second (typical speech rate)
-    words_per_second = 2.5
-    num_words = max(1, int(duration * words_per_second))
-    word_duration = duration / num_words
+    # Seed the random generator with the file path for reproducible results
+    seed = int(hashlib.md5(audio_path.encode()).hexdigest()[:8], 16)
+    rng = random.Random(seed)
 
+    if not manuscript_text.strip():
+        # No manuscript — fall back to generic placeholder
+        words_per_second = 2.5
+        num_words = max(1, int(duration * words_per_second))
+        word_duration = duration / num_words
+        words = []
+        for i in range(num_words):
+            start = i * word_duration
+            end = start + word_duration * 0.85
+            words.append({
+                "word": f"word_{i}",
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "confidence": 0.5,
+            })
+        return words
+
+    # Parse manuscript into raw words (preserving original casing/punctuation)
+    raw_words = manuscript_text.split()
+    if not raw_words:
+        return []
+
+    # Common misread substitutions (word -> plausible misread)
+    _misread_pool = [
+        "the", "a", "an", "and", "but", "or", "in", "on", "at", "to",
+        "for", "of", "with", "from", "by", "that", "this", "it", "is",
+        "was", "were", "been", "have", "has", "had", "are", "be", "do",
+    ]
+    _filler_words = ["um", "uh", "er", "ah"]
+
+    # Build the simulated transcript
+    sim_words = []
+    i = 0
+
+    # Pick a retake section (repeat ~5-10 words somewhere in the middle)
+    retake_start = rng.randint(len(raw_words) // 4, len(raw_words) // 2)
+    retake_len = min(rng.randint(5, 10), len(raw_words) - retake_start)
+
+    while i < len(raw_words):
+        roll = rng.random()
+
+        if roll < 0.02:
+            # 2% chance: insert a filler word (um, uh)
+            sim_words.append({"sim_word": rng.choice(_filler_words), "type": "filler"})
+            # Don't advance i — the manuscript word is still upcoming
+
+        elif roll < 0.04:
+            # 2% chance: skip this word (simulates swallowed/mumbled word)
+            i += 1
+            continue
+
+        elif roll < 0.08:
+            # 4% chance: misread this word
+            original = raw_words[i]
+            # Pick a misread that's different from the original
+            misread = rng.choice(_misread_pool)
+            # For longer words, sometimes just change a few characters
+            if len(original) > 4 and rng.random() < 0.5:
+                chars = list(original.lower())
+                pos = rng.randint(0, len(chars) - 1)
+                chars[pos] = rng.choice("aeiou")
+                misread = "".join(chars)
+            sim_words.append({"sim_word": misread, "type": "misread"})
+            i += 1
+
+        else:
+            # ~92% chance: correct word
+            sim_words.append({"sim_word": raw_words[i], "type": "correct"})
+            i += 1
+
+        # Insert retake at the designated point
+        if i == retake_start + retake_len:
+            # Simulate narrator going back and re-reading
+            sim_words.append({"sim_word": "um", "type": "filler"})
+            for ri in range(retake_start, min(retake_start + retake_len, len(raw_words))):
+                sim_words.append({"sim_word": raw_words[ri], "type": "retake"})
+
+    # Now assign timestamps based on audio duration
+    num_sim = len(sim_words)
+    if num_sim == 0:
+        return []
+
+    word_duration = duration / num_sim
     words = []
-    for i in range(num_words):
-        start = i * word_duration
-        end = start + word_duration * 0.85  # small gap between words
+    for idx, sw in enumerate(sim_words):
+        start = idx * word_duration
+        end = start + word_duration * 0.85
+
+        # Vary confidence based on type
+        if sw["type"] == "correct" or sw["type"] == "retake":
+            confidence = rng.uniform(0.85, 0.99)
+        elif sw["type"] == "misread":
+            confidence = rng.uniform(0.4, 0.7)
+        else:  # filler
+            confidence = rng.uniform(0.3, 0.6)
+
         words.append({
-            "word": f"word_{i}",
+            "word": sw["sim_word"],
             "start": round(start, 3),
             "end": round(end, 3),
-            "confidence": 0.5,  # low confidence signals simulated data
+            "confidence": round(confidence, 3),
         })
+
     return words
 
 

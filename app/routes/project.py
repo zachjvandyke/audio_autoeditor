@@ -329,7 +329,9 @@ def _process_chapterized(app, project_id: int):
             if not os.path.exists(filepath):
                 continue
 
-            transcript_words = transcribe_audio(filepath)
+            transcript_words = transcribe_audio(
+                filepath, manuscript_text=chapter_text
+            )
             aligned = align_transcript_to_manuscript(
                 transcript_words, chapter_text
             )
@@ -458,7 +460,7 @@ def _process_continuous(app, project_id: int):
         if not os.path.exists(filepath):
             continue
 
-        local_words = transcribe_audio(filepath)
+        local_words = transcribe_audio(filepath, manuscript_text=full_text)
 
         file_duration = audio.duration if audio.duration > 0 else (
             local_words[-1]["end"] if local_words else 0.0
@@ -687,7 +689,7 @@ def _process_unassigned_audio(project_id: int, upload_folder: str, global_seg_id
         if not os.path.exists(filepath):
             continue
 
-        transcript_words = transcribe_audio(filepath)
+        transcript_words = transcribe_audio(filepath, manuscript_text=full_text)
         aligned = align_transcript_to_manuscript(transcript_words, full_text)
 
         chapter_segments = []
