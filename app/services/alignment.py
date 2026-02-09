@@ -9,6 +9,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import unicodedata
 
 from app.services.audio import convert_to_wav
 
@@ -226,8 +227,9 @@ def align_transcript_to_manuscript(
 
     Returns aligned segments with both detected and expected text, plus timing.
     """
-    # Normalize manuscript words
+    # Normalize manuscript words for comparison; keep originals for display.
     manuscript_words = _normalize_text_to_words(manuscript_text)
+    manuscript_originals = _extract_original_words(manuscript_text)
     transcript_texts = [_normalize_word(w["word"]) for w in transcript_words]
 
     # Use SequenceMatcher for alignment
@@ -246,7 +248,7 @@ def align_transcript_to_manuscript(
                 tw = transcript_words[ti]
                 aligned.append({
                     "text": tw["word"],
-                    "expected_text": manuscript_words[mi],
+                    "expected_text": manuscript_originals[mi],
                     "start_time": tw["start"],
                     "end_time": tw["end"],
                     "confidence": tw["confidence"],
@@ -267,7 +269,7 @@ def align_transcript_to_manuscript(
                     tw = transcript_words[t_range[k]]
                     aligned.append({
                         "text": tw["word"],
-                        "expected_text": manuscript_words[m_range[k]],
+                        "expected_text": manuscript_originals[m_range[k]],
                         "start_time": tw["start"],
                         "end_time": tw["end"],
                         "confidence": tw["confidence"],
@@ -294,7 +296,7 @@ def align_transcript_to_manuscript(
                     est_time = _estimate_missing_time(transcript_words, i1, i2)
                     aligned.append({
                         "text": "",
-                        "expected_text": manuscript_words[m_range[k]],
+                        "expected_text": manuscript_originals[m_range[k]],
                         "start_time": est_time,
                         "end_time": est_time,
                         "confidence": 0.0,
@@ -310,7 +312,7 @@ def align_transcript_to_manuscript(
             for mi in range(j1, j2):
                 aligned.append({
                     "text": "",
-                    "expected_text": manuscript_words[mi],
+                    "expected_text": manuscript_originals[mi],
                     "start_time": est_time,
                     "end_time": est_time,
                     "confidence": 0.0,
@@ -389,15 +391,51 @@ def detect_retakes(transcript_words: list[dict], manuscript_text: str) -> list[d
 
 
 def _normalize_word(word: str) -> str:
-    """Normalize a word for comparison."""
+    """Normalize a word for comparison.
+
+    Applies Unicode normalization, replaces typographic variants (smart quotes,
+    em-dashes, ligatures, etc.) with ASCII equivalents, lowercases, and strips
+    punctuation so that minor formatting differences don't cause false mismatches.
+    """
+    word = _normalize_characters(word)
     return re.sub(r"[^\w']", "", word.lower().strip())
+
+
+def _normalize_characters(text: str) -> str:
+    """Replace typographic and Unicode variants with plain ASCII equivalents."""
+    # Decompose Unicode characters (e.g. accented chars -> base + combining mark)
+    text = unicodedata.normalize("NFKD", text)
+    # Strip combining marks (accents, diacritics)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    # Smart/curly quotes -> straight
+    text = text.replace("\u2018", "'").replace("\u2019", "'")  # single
+    text = text.replace("\u201c", '"').replace("\u201d", '"')  # double
+    # Dashes -> hyphen
+    text = text.replace("\u2013", "-").replace("\u2014", "-")  # en/em dash
+    # Ellipsis -> three dots
+    text = text.replace("\u2026", "...")
+    return text
 
 
 def _normalize_text_to_words(text: str) -> list[str]:
     """Extract and normalize words from text."""
+    text = _normalize_characters(text)
     cleaned = re.sub(r"[^\w\s']", " ", text)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return [_normalize_word(w) for w in cleaned.split() if _normalize_word(w)]
+
+
+def _extract_original_words(text: str) -> list[str]:
+    """Extract original (non-normalized) words from text.
+
+    Returns a list that is 1:1 with ``_normalize_text_to_words(text)`` but
+    preserves the original casing/punctuation-stripped form from the
+    manuscript so that ``expected_text`` shown to the user isn't misleadingly
+    lowercased.
+    """
+    cleaned = re.sub(r"[^\w\s']", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return [w for w in cleaned.split() if _normalize_word(w)]
 
 
 def _estimate_missing_time(
