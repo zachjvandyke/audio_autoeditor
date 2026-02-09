@@ -227,8 +227,9 @@ def align_transcript_to_manuscript(
 
     Returns aligned segments with both detected and expected text, plus timing.
     """
-    # Normalize manuscript words
+    # Normalize manuscript words for comparison; keep originals for display.
     manuscript_words = _normalize_text_to_words(manuscript_text)
+    manuscript_originals = _extract_original_words(manuscript_text)
     transcript_texts = [_normalize_word(w["word"]) for w in transcript_words]
 
     # Use SequenceMatcher for alignment
@@ -247,7 +248,7 @@ def align_transcript_to_manuscript(
                 tw = transcript_words[ti]
                 aligned.append({
                     "text": tw["word"],
-                    "expected_text": manuscript_words[mi],
+                    "expected_text": manuscript_originals[mi],
                     "start_time": tw["start"],
                     "end_time": tw["end"],
                     "confidence": tw["confidence"],
@@ -268,7 +269,7 @@ def align_transcript_to_manuscript(
                     tw = transcript_words[t_range[k]]
                     aligned.append({
                         "text": tw["word"],
-                        "expected_text": manuscript_words[m_range[k]],
+                        "expected_text": manuscript_originals[m_range[k]],
                         "start_time": tw["start"],
                         "end_time": tw["end"],
                         "confidence": tw["confidence"],
@@ -295,7 +296,7 @@ def align_transcript_to_manuscript(
                     est_time = _estimate_missing_time(transcript_words, i1, i2)
                     aligned.append({
                         "text": "",
-                        "expected_text": manuscript_words[m_range[k]],
+                        "expected_text": manuscript_originals[m_range[k]],
                         "start_time": est_time,
                         "end_time": est_time,
                         "confidence": 0.0,
@@ -311,7 +312,7 @@ def align_transcript_to_manuscript(
             for mi in range(j1, j2):
                 aligned.append({
                     "text": "",
-                    "expected_text": manuscript_words[mi],
+                    "expected_text": manuscript_originals[mi],
                     "start_time": est_time,
                     "end_time": est_time,
                     "confidence": 0.0,
@@ -422,6 +423,19 @@ def _normalize_text_to_words(text: str) -> list[str]:
     cleaned = re.sub(r"[^\w\s']", " ", text)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return [_normalize_word(w) for w in cleaned.split() if _normalize_word(w)]
+
+
+def _extract_original_words(text: str) -> list[str]:
+    """Extract original (non-normalized) words from text.
+
+    Returns a list that is 1:1 with ``_normalize_text_to_words(text)`` but
+    preserves the original casing/punctuation-stripped form from the
+    manuscript so that ``expected_text`` shown to the user isn't misleadingly
+    lowercased.
+    """
+    cleaned = re.sub(r"[^\w\s']", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return [w for w in cleaned.split() if _normalize_word(w)]
 
 
 def _estimate_missing_time(
