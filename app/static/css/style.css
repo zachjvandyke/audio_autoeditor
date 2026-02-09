@@ -763,6 +763,105 @@ kbd {
 
 .muted { color: var(--text-muted); font-size: 0.85rem; }
 
+/* === Chapter Tabs === */
+.chapter-tabs {
+    display: flex;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+    gap: 0;
+}
+.chapter-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: all 0.1s;
+    text-decoration: none;
+}
+.chapter-tab:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+}
+.chapter-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    background: var(--primary-bg);
+}
+.chapter-tab-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.chapter-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+.chapter-tab-badge.chapter-tab-done {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+/* === Setup Page (Chapter Assignment) === */
+.assignment-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.assignment-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.assignment-audio {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+.assignment-audio svg { flex-shrink: 0; color: var(--text-muted); }
+.assignment-audio-info { min-width: 0; }
+.assignment-filename {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.assignment-duration { font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); }
+.assignment-arrow { flex-shrink: 0; color: var(--text-muted); }
+.assignment-chapter { flex: 1; }
+.chapter-select { width: 100%; }
+
+.chapter-summary-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.chapter-summary-item {
+    padding: 0.6rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.chapter-summary-name { font-size: 0.9rem; margin-bottom: 0.2rem; }
+.chapter-summary-meta { font-size: 0.75rem; color: var(--text-secondary); }
+.chapter-preview {
+    margin-top: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.4;
+}
+
 /* === Scrollbar === */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

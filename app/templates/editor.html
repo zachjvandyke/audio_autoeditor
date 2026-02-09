@@ -133,15 +133,29 @@
             </div>
         </div>
 
+        {% if chapters|length > 1 %}
+        <div class="chapter-tabs">
+            {% for ch in chapters %}
+            <a href="{{ url_for('editor.edit', project_id=project.id, chapter=ch.id) }}"
+               class="chapter-tab {% if active_chapter and active_chapter.id == ch.id %}active{% endif %}">
+                <span class="chapter-tab-name">{{ ch.text_content }}</span>
+                {% if ch.id in chapter_stats and chapter_stats[ch.id].pending > 0 %}
+                <span class="chapter-tab-badge">{{ chapter_stats[ch.id].pending }}</span>
+                {% elif ch.id in chapter_stats and chapter_stats[ch.id].total > 0 %}
+                <span class="chapter-tab-badge chapter-tab-done">&#10003;</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         <div class="manuscript-view" id="manuscriptView">
-            {% if chapters %}
-                {% for chapter in chapters %}
+            {% if active_chapter %}
                 <div class="chapter-block">
-                    <h3 class="chapter-heading">{{ chapter.text_content }}</h3>
-                    {% for para in chapter.children %}
+                    <h3 class="chapter-heading">{{ active_chapter.text_content }}</h3>
+                    {% for para in paragraphs %}
                     <div class="paragraph-block" data-section-id="{{ para.id }}">
                         <div class="paragraph-text">
-                            {# Render words with alignment highlighting #}
                             {% set para_segments = [] %}
                             {% for seg in segments if seg.manuscript_section_id == para.id %}
                                 {% if para_segments.append(seg) %}{% endif %}
@@ -168,7 +182,6 @@
                     </div>
                     {% endfor %}
                 </div>
-                {% endfor %}
             {% elif paragraphs %}
                 {% for para in paragraphs %}
                 <div class="paragraph-block" data-section-id="{{ para.id }}">

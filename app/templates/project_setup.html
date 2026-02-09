@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Setup - {{ project.title }}{% endblock %}
+
+{% block content %}
+<div class="create-page">
+    <div class="create-header">
+        <a href="{{ url_for('dashboard.index') }}" class="back-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+        </a>
+        <h1>{{ project.title }} - Chapter Assignment</h1>
+        <p class="form-hint" style="margin-top: 0.5rem;">
+            Assign each audio file to the chapter it belongs to. Files have been auto-matched by filename where possible.
+        </p>
+    </div>
+
+    <form method="POST" action="{{ url_for('project.assign_chapters', project_id=project.id) }}" id="setupForm">
+
+        <div class="form-section">
+            <h2>Audio Files &rarr; Chapters</h2>
+            <p class="form-hint">Each audio file should correspond to one chapter. You can assign multiple files to the same chapter if a chapter was recorded in multiple sessions.</p>
+
+            {% if audio_files %}
+            <div class="assignment-list">
+                {% for af in audio_files %}
+                <div class="assignment-row">
+                    <div class="assignment-audio">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                        </svg>
+                        <div class="assignment-audio-info">
+                            <span class="assignment-filename">{{ af.original_filename }}</span>
+                            {% if af.duration > 0 %}
+                            <span class="assignment-duration">{{ '%d:%02d'|format(af.duration // 60, af.duration % 60) }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="assignment-arrow">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                    </div>
+                    <div class="assignment-chapter">
+                        <select name="audio_chapter_{{ af.id }}" class="form-input chapter-select">
+                            <option value="">-- Unassigned --</option>
+                            {% for ch in chapters %}
+                            <option value="{{ ch.id }}" {% if af.chapter_id == ch.id %}selected{% endif %}>
+                                {{ ch.text_content }}
+                                {% if ch.children %} ({{ ch.children|length }} paragraphs){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted">No audio files uploaded.</p>
+            {% endif %}
+        </div>
+
+        {% if chapters %}
+        <div class="form-section">
+            <h2>Chapter Summary</h2>
+            <div class="chapter-summary-list">
+                {% for ch in chapters %}
+                <div class="chapter-summary-item">
+                    <div class="chapter-summary-name">
+                        <strong>{{ ch.text_content }}</strong>
+                    </div>
+                    <div class="chapter-summary-meta">
+                        {{ ch.children|length }} paragraphs
+                        <span class="chapter-assigned-count" data-chapter-id="{{ ch.id }}">
+                            &middot; {{ audio_files|selectattr('chapter_id', 'equalto', ch.id)|list|length }} audio file(s)
+                        </span>
+                    </div>
+                    {% if ch.children %}
+                    <div class="chapter-preview">
+                        {{ ch.children[0].text_content[:150] }}{% if ch.children[0].text_content|length > 150 %}...{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="form-actions">
+            <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary btn-lg" id="processBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Process Audio
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.getElementById('setupForm').addEventListener('submit', function() {
+    var btn = document.getElementById('processBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Processing...';
+});
+</script>
+{% endblock %}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 
 from flask import (
@@ -45,7 +46,7 @@ def create():
     # Create project
     project = Project(title=title, status="created")
     db.session.add(project)
-    db.session.flush()  # get project.id
+    db.session.flush()
 
     # Parse and store manuscript sections
     sections = parse_manuscript(manuscript_text)
@@ -56,7 +57,7 @@ def create():
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     stored_files = []
 
-    for f in audio_files:
+    for idx, f in enumerate(audio_files):
         if f and f.filename and allowed_file(f.filename):
             stored_name, original_name = save_upload(f, upload_folder)
             filepath = os.path.join(upload_folder, stored_name)
@@ -67,6 +68,7 @@ def create():
                 project_id=project.id,
                 filename=stored_name,
                 original_filename=original_name,
+                sort_order=idx,
                 duration=duration,
                 sample_rate=sample_rate,
             )
@@ -75,14 +77,62 @@ def create():
 
     db.session.commit()
 
+    # Auto-assign audio files to chapters by order/filename
+    _auto_assign_chapters(project.id)
+    db.session.commit()
+
     if stored_files:
-        # Start processing in background
-        project.status = "processing"
-        db.session.commit()
-        _start_processing(current_app._get_current_object(), project.id)
+        # Go to setup page to review/adjust chapter-audio mapping
+        flash(f'Project "{title}" created. Review chapter assignments below.', "success")
+        return redirect(url_for("project.setup", project_id=project.id))
 
     flash(f'Project "{title}" created successfully!', "success")
     return redirect(url_for("dashboard.index"))
+
+
+@project_bp.route("/<int:project_id>/setup")
+def setup(project_id):
+    """Chapter-audio assignment page."""
+    project = Project.query.get_or_404(project_id)
+
+    chapters = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    audio_files = AudioFile.query.filter_by(
+        project_id=project_id
+    ).order_by(AudioFile.sort_order).all()
+
+    return render_template(
+        "project_setup.html",
+        project=project,
+        chapters=chapters,
+        audio_files=audio_files,
+    )
+
+
+@project_bp.route("/<int:project_id>/assign", methods=["POST"])
+def assign_chapters(project_id):
+    """Save chapter-audio assignments and start processing."""
+    project = Project.query.get_or_404(project_id)
+
+    audio_files = AudioFile.query.filter_by(project_id=project_id).all()
+
+    # Read assignments from form: audio_chapter_<audio_id> = chapter_id
+    for af in audio_files:
+        chapter_val = request.form.get(f"audio_chapter_{af.id}", "")
+        if chapter_val and chapter_val.isdigit():
+            af.chapter_id = int(chapter_val)
+        else:
+            af.chapter_id = None
+
+    # Start processing
+    project.status = "processing"
+    db.session.commit()
+    _start_processing(current_app._get_current_object(), project.id)
+
+    flash("Processing started. You'll be redirected to the editor when ready.", "success")
+    return redirect(url_for("editor.edit", project_id=project.id))
 
 
 @project_bp.route("/<int:project_id>/delete", methods=["POST"])
@@ -90,7 +140,6 @@ def delete(project_id):
     project = Project.query.get_or_404(project_id)
     upload_folder = current_app.config["UPLOAD_FOLDER"]
 
-    # Delete uploaded files from disk
     for af in project.audio_files:
         filepath = os.path.join(upload_folder, af.filename)
         if os.path.exists(filepath):
@@ -106,7 +155,6 @@ def delete(project_id):
 def reprocess(project_id):
     project = Project.query.get_or_404(project_id)
     if project.audio_files:
-        # Clear existing alignment data
         AlignmentSegment.query.filter_by(project_id=project_id).delete()
         Conflict.query.filter_by(project_id=project_id).delete()
         Take.query.filter_by(project_id=project_id).delete()
@@ -143,6 +191,62 @@ def _store_sections(project_id: int, sections: list[dict], parent_id=None):
             db.session.add(child_ms)
 
 
+def _auto_assign_chapters(project_id: int):
+    """Try to auto-match audio files to chapters by filename or order.
+
+    Strategies:
+    1. Match filenames containing chapter numbers (e.g. "ch01.wav", "chapter_1.mp3")
+    2. Fall back to matching by upload order = chapter order
+    """
+    chapters = ManuscriptSection.query.filter_by(
+        project_id=project_id, section_type="chapter"
+    ).order_by(ManuscriptSection.section_index).all()
+
+    audio_files = AudioFile.query.filter_by(
+        project_id=project_id
+    ).order_by(AudioFile.sort_order).all()
+
+    if not chapters or not audio_files:
+        return
+
+    chapter_map = {}  # chapter_index -> ManuscriptSection
+    for ch in chapters:
+        chapter_map[ch.section_index] = ch
+
+    assigned = set()
+    for af in audio_files:
+        num = _extract_number_from_filename(af.original_filename)
+        if num is not None and num in chapter_map and num not in assigned:
+            af.chapter_id = chapter_map[num].id
+            assigned.add(num)
+
+    # Assign remaining by order
+    unassigned_audio = [af for af in audio_files if af.chapter_id is None]
+    unassigned_chapters = [
+        ch for ch in chapters
+        if ch.id not in {af.chapter_id for af in audio_files if af.chapter_id}
+    ]
+
+    for af, ch in zip(unassigned_audio, unassigned_chapters):
+        af.chapter_id = ch.id
+
+
+def _extract_number_from_filename(filename: str) -> int | None:
+    """Extract a chapter/section number from a filename."""
+    name = os.path.splitext(filename)[0].lower()
+    patterns = [
+        r'ch(?:apter)?[_\s.-]*(\d+)',
+        r'part[_\s.-]*(\d+)',
+        r'section[_\s.-]*(\d+)',
+        r'^(\d+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, name)
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def _start_processing(app, project_id: int):
     """Run alignment processing in a background thread."""
     thread = threading.Thread(target=_process_project, args=(app, project_id))
@@ -151,7 +255,7 @@ def _start_processing(app, project_id: int):
 
 
 def _process_project(app, project_id: int):
-    """Process a project: transcribe, align, detect conflicts and retakes."""
+    """Process a project: transcribe audio per chapter, align, detect conflicts."""
     with app.app_context():
         try:
             project = Project.query.get(project_id)
@@ -160,94 +264,162 @@ def _process_project(app, project_id: int):
 
             upload_folder = app.config["UPLOAD_FOLDER"]
 
-            # Get full manuscript text
-            paragraphs = ManuscriptSection.query.filter_by(
-                project_id=project_id, section_type="paragraph"
+            chapters = ManuscriptSection.query.filter_by(
+                project_id=project_id, section_type="chapter"
             ).order_by(ManuscriptSection.section_index).all()
-            full_text = " ".join(p.text_content for p in paragraphs)
 
-            if not full_text:
-                project.status = "ready"
-                db.session.commit()
-                return
-
-            # Process each audio file
             all_segments = []
-            for audio in project.audio_files:
-                filepath = os.path.join(upload_folder, audio.filename)
-                if not os.path.exists(filepath):
+            global_seg_idx = 0
+
+            for chapter in chapters:
+                # Get this chapter's text from its paragraphs
+                paragraphs = ManuscriptSection.query.filter_by(
+                    parent_id=chapter.id, section_type="paragraph"
+                ).order_by(ManuscriptSection.section_index).all()
+
+                chapter_text = " ".join(p.text_content for p in paragraphs)
+                if not chapter_text:
                     continue
 
-                # Transcribe
-                transcript_words = transcribe_audio(filepath)
+                # Get audio files assigned to this chapter
+                chapter_audio = AudioFile.query.filter_by(
+                    project_id=project_id, chapter_id=chapter.id
+                ).order_by(AudioFile.sort_order).all()
 
-                # Align to manuscript
-                aligned = align_transcript_to_manuscript(transcript_words, full_text)
+                if not chapter_audio:
+                    continue
 
-                # Store segments
-                for seg in aligned:
-                    db_seg = AlignmentSegment(
-                        project_id=project_id,
-                        audio_file_id=audio.id,
-                        text=seg["text"],
-                        expected_text=seg["expected_text"],
-                        start_time=seg["start_time"],
-                        end_time=seg["end_time"],
-                        confidence=seg["confidence"],
-                        segment_type=seg["segment_type"],
-                        segment_index=seg["segment_index"],
+                for audio in chapter_audio:
+                    filepath = os.path.join(upload_folder, audio.filename)
+                    if not os.path.exists(filepath):
+                        continue
+
+                    transcript_words = transcribe_audio(filepath)
+                    aligned = align_transcript_to_manuscript(
+                        transcript_words, chapter_text
                     )
-                    # Link to closest manuscript section
-                    if paragraphs:
-                        db_seg.manuscript_section_id = _find_best_section(
-                            seg, paragraphs
-                        )
-                    db.session.add(db_seg)
-                    db.session.flush()
 
-                    # Create default take
-                    if seg["start_time"] != seg["end_time"]:
-                        take = Take(
+                    for seg in aligned:
+                        seg["segment_index"] = global_seg_idx
+
+                        db_seg = AlignmentSegment(
                             project_id=project_id,
-                            segment_id=db_seg.id,
                             audio_file_id=audio.id,
+                            text=seg["text"],
+                            expected_text=seg["expected_text"],
                             start_time=seg["start_time"],
                             end_time=seg["end_time"],
-                            take_number=1,
-                            is_selected=True,
                             confidence=seg["confidence"],
+                            segment_type=seg["segment_type"],
+                            segment_index=global_seg_idx,
                         )
-                        db.session.add(take)
+                        if paragraphs:
+                            db_seg.manuscript_section_id = _find_best_section(
+                                seg, paragraphs
+                            )
+                        db.session.add(db_seg)
+                        db.session.flush()
 
-                all_segments.extend(aligned)
-
-                # Detect retakes
-                retakes = detect_retakes(transcript_words, full_text)
-                for group in retakes:
-                    for i, take_info in enumerate(group["takes"]):
-                        # Find or create segment for this retake
-                        existing = AlignmentSegment.query.filter_by(
-                            project_id=project_id,
-                            audio_file_id=audio.id,
-                            start_time=take_info["start_time"],
-                        ).first()
-                        if existing:
+                        if seg["start_time"] != seg["end_time"]:
                             take = Take(
                                 project_id=project_id,
-                                segment_id=existing.id,
+                                segment_id=db_seg.id,
                                 audio_file_id=audio.id,
-                                start_time=take_info["start_time"],
-                                end_time=take_info["end_time"],
-                                take_number=i + 1,
-                                is_selected=(i == 0),
-                                confidence=take_info["confidence"],
+                                start_time=seg["start_time"],
+                                end_time=seg["end_time"],
+                                take_number=1,
+                                is_selected=True,
+                                confidence=seg["confidence"],
                             )
                             db.session.add(take)
 
-            # Detect conflicts
+                        global_seg_idx += 1
+
+                    all_segments.extend(aligned)
+
+                    # Detect retakes within this chapter's audio
+                    retakes = detect_retakes(transcript_words, chapter_text)
+                    for group in retakes:
+                        for i, take_info in enumerate(group["takes"]):
+                            existing = AlignmentSegment.query.filter_by(
+                                project_id=project_id,
+                                audio_file_id=audio.id,
+                                start_time=take_info["start_time"],
+                            ).first()
+                            if existing:
+                                take = Take(
+                                    project_id=project_id,
+                                    segment_id=existing.id,
+                                    audio_file_id=audio.id,
+                                    start_time=take_info["start_time"],
+                                    end_time=take_info["end_time"],
+                                    take_number=i + 1,
+                                    is_selected=(i == 0),
+                                    confidence=take_info["confidence"],
+                                )
+                                db.session.add(take)
+
+            # Process any unassigned audio against full manuscript text
+            unassigned = AudioFile.query.filter_by(
+                project_id=project_id, chapter_id=None
+            ).all()
+
+            if unassigned:
+                all_paragraphs = ManuscriptSection.query.filter_by(
+                    project_id=project_id, section_type="paragraph"
+                ).order_by(ManuscriptSection.section_index).all()
+                full_text = " ".join(p.text_content for p in all_paragraphs)
+
+                if full_text:
+                    for audio in unassigned:
+                        filepath = os.path.join(upload_folder, audio.filename)
+                        if not os.path.exists(filepath):
+                            continue
+
+                        transcript_words = transcribe_audio(filepath)
+                        aligned = align_transcript_to_manuscript(
+                            transcript_words, full_text
+                        )
+
+                        for seg in aligned:
+                            seg["segment_index"] = global_seg_idx
+                            db_seg = AlignmentSegment(
+                                project_id=project_id,
+                                audio_file_id=audio.id,
+                                text=seg["text"],
+                                expected_text=seg["expected_text"],
+                                start_time=seg["start_time"],
+                                end_time=seg["end_time"],
+                                confidence=seg["confidence"],
+                                segment_type=seg["segment_type"],
+                                segment_index=global_seg_idx,
+                            )
+                            if all_paragraphs:
+                                db_seg.manuscript_section_id = _find_best_section(
+                                    seg, all_paragraphs
+                                )
+                            db.session.add(db_seg)
+                            db.session.flush()
+
+                            if seg["start_time"] != seg["end_time"]:
+                                take = Take(
+                                    project_id=project_id,
+                                    segment_id=db_seg.id,
+                                    audio_file_id=audio.id,
+                                    start_time=seg["start_time"],
+                                    end_time=seg["end_time"],
+                                    take_number=1,
+                                    is_selected=True,
+                                    confidence=seg["confidence"],
+                                )
+                                db.session.add(take)
+
+                            global_seg_idx += 1
+                        all_segments.extend(aligned)
+
+            # Detect conflicts across all segments
             conflicts = detect_conflicts(all_segments)
             for c in conflicts:
-                # Find the matching segment
                 matching_seg = AlignmentSegment.query.filter_by(
                     project_id=project_id,
                     segment_index=c["segment_index"],
@@ -269,7 +441,7 @@ def _process_project(app, project_id: int):
         except Exception as e:
             project = Project.query.get(project_id)
             if project:
-                project.status = "ready"  # allow access even if processing had issues
+                project.status = "ready"
                 db.session.commit()
             print(f"Processing error for project {project_id}: {e}")
 
