@@ -11,7 +11,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
     EXPORT_FOLDER = os.path.join(BASE_DIR, "exports")
-    MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB max upload
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024 * 1024  # 10GB max upload
 
 
 class TestingConfig(Config):
