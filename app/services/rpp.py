@@ -132,13 +132,36 @@ def export_rpp(
     markers = []
     marker_idx = 1
 
-    # Create conflict markers
+    # Build audio path lookup: audio_file_id -> filesystem path
+    audio_path_map = {}
+    for af in audio_files:
+        af_id = af.get("audio_file_id")
+        if af_id is not None:
+            audio_path_map[af_id] = af.get("path", "")
+    default_audio = audio_files[0].get("path", "") if audio_files else ""
+
+    # Build conformed position map so markers and reference tracks
+    # can be placed at the correct timeline positions.
+    conformed_pos_map = {}
+    position = 0.0
+    for seg in segments:
+        if seg.get("alignment") == "missing":
+            continue
+        start = seg.get("start_time", 0)
+        end = seg.get("end_time", 0)
+        length = end - start
+        if length <= 0:
+            continue
+        seg_idx = seg.get("segment_index", 0)
+        conformed_pos_map[seg_idx] = position
+        position += length
+
+    # Create conflict markers using conformed timeline positions
     if conflicts:
         for c in conflicts:
             seg_idx = c.get("segment_index", 0)
-            matching_segs = [s for s in segments if s.get("segment_index") == seg_idx]
-            if matching_segs:
-                pos = matching_segs[0].get("start_time", 0)
+            if seg_idx in conformed_pos_map:
+                pos = conformed_pos_map[seg_idx]
                 ctype = c.get("conflict_type", "issue")
                 status = c.get("status", "pending")
                 detected = c.get("detected_text", "")
@@ -156,25 +179,19 @@ def export_rpp(
                 markers.append(create_marker(marker_idx, pos, label, color))
                 marker_idx += 1
 
-    # Track 1: Reference (full unedited audio files)
+    # Track 1: Reference (full unedited audio files, laid out sequentially)
+    ref_offset = 0.0
     for i, af in enumerate(audio_files):
         path = af.get("path", "")
         duration = af.get("duration", 0)
         if duration <= 0 and os.path.exists(path):
             duration = get_duration_ffprobe(path)
         if duration > 0:
-            items = create_simple_item(path, 0.0, duration, name=af.get("filename", ""))
+            items = create_simple_item(path, ref_offset, duration, name=af.get("filename", ""))
             tracks.append(create_track(
                 items, name=f"Reference - {af.get('filename', f'Audio {i+1}')}", mute=1
             ))
-
-    # Build audio path lookup: audio_file_id -> filesystem path
-    audio_path_map = {}
-    for af in audio_files:
-        af_id = af.get("audio_file_id")
-        if af_id is not None:
-            audio_path_map[af_id] = af.get("path", "")
-    default_audio = audio_files[0].get("path", "") if audio_files else ""
+            ref_offset += duration
 
     # Track 2: Conformed edit (segments assembled in order)
     if segments and audio_files:
