@@ -1,5 +1,4 @@
 """REAPER RPP project file export service."""
-from __future__ import annotations
 
 import os
 from pathlib import Path
