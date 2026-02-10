@@ -50,14 +50,22 @@
     // Annotation Navigation
     // ========================
 
+    function isConfidenceVisible() {
+        var cb = document.getElementById('showConfidence');
+        return cb && cb.checked;
+    }
+
     function updateVisibleAnnotations() {
         const typeFilter = document.getElementById('filterType').value;
         const statusFilter = document.getElementById('filterStatus').value;
+        const showConf = isConfidenceVisible();
 
         document.querySelectorAll('.annotation-item').forEach(function(item) {
             const matchType = !typeFilter || item.dataset.conflictType === typeFilter;
             const matchStatus = !statusFilter || item.dataset.status === statusFilter;
-            item.style.display = (matchType && matchStatus) ? '' : 'none';
+            // Hide low_confidence unless the confidence toggle is on
+            const hideConf = !showConf && item.dataset.conflictType === 'low_confidence';
+            item.style.display = (matchType && matchStatus && !hideConf) ? '' : 'none';
         });
 
         visibleAnnotations = Array.from(
@@ -399,6 +407,18 @@
         });
 
         document.getElementById('filterStatus').addEventListener('change', function() {
+            updateVisibleAnnotations();
+            currentAnnotationIndex = -1;
+            if (visibleAnnotations.length > 0) selectAnnotation(0);
+        });
+
+        document.getElementById('showConfidence').addEventListener('change', function() {
+            var layout = document.querySelector('.editor-layout');
+            if (this.checked) {
+                layout.classList.remove('confidence-hidden');
+            } else {
+                layout.classList.add('confidence-hidden');
+            }
             updateVisibleAnnotations();
             currentAnnotationIndex = -1;
             if (visibleAnnotations.length > 0) selectAnnotation(0);

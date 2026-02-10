@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="editor-layout" data-project-id="{{ project.id }}">
+<div class="editor-layout confidence-hidden" data-project-id="{{ project.id }}">
 
     <!-- Left Panel: Annotations/Conflicts -->
     <aside class="editor-sidebar" id="annotationPanel">
@@ -33,6 +33,12 @@
                 <option value="ok">OK</option>
                 <option value="needs_edit">Needs Edit</option>
             </select>
+        </div>
+        <div class="sidebar-toggle">
+            <label class="toggle-label" for="showConfidence">
+                <input type="checkbox" id="showConfidence">
+                <span>Show confidence scores</span>
+            </label>
         </div>
 
         <div class="sidebar-actions">
@@ -174,7 +180,8 @@
                                 {% for seg in para_segments %}
                                 <span class="word-span
                                     {% if seg.id in conflict_map %} word-conflict word-{{ conflict_map[seg.id][0].conflict_type }}{% endif %}
-                                    {% if seg.id in take_map %} word-has-takes{% endif %}"
+                                    {% if seg.id in take_map %} word-has-takes{% endif %}
+                                    {% if seg.confidence < 0.7 %} word-low-conf-tint{% endif %}"
                                     data-segment-id="{{ seg.id }}"
                                     data-start="{{ seg.start_time }}"
                                     data-end="{{ seg.end_time }}"

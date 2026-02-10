@@ -467,6 +467,22 @@ a:hover { color: var(--primary-hover); }
     font-family: var(--font);
 }
 
+.sidebar-toggle {
+    padding: 0 1rem 0.5rem;
+}
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.toggle-label input[type="checkbox"] {
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
 .sidebar-actions {
     display: flex;
     gap: 0.4rem;
@@ -617,6 +633,10 @@ a:hover { color: var(--primary-hover); }
 .word-extra_word { border-bottom-color: var(--info); }
 .word-low_confidence { border-bottom-color: var(--warning); border-bottom-style: dashed; }
 .word-pause { border-bottom-color: var(--text-muted); border-bottom-style: dotted; }
+
+/* When confidence is hidden, suppress low-confidence visual indicators */
+.confidence-hidden .word-low-conf-tint { background-color: transparent !important; }
+.confidence-hidden .word-low_confidence { border-bottom-color: transparent; }
 
 .word-has-takes {
     background: rgba(99, 102, 241, 0.08);
