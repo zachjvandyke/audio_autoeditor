@@ -133,10 +133,27 @@ def edit(project_id):
                 pending = sum(1 for c in ch_conflicts if c.status == "pending")
                 chapter_stats[ch.id] = {"total": total, "pending": pending}
 
-    # Build maps
+    # Build maps – expand conflict_map so multi-word conflicts highlight every
+    # spanned word, not just the first.
     conflict_map = {}
+    conflict_span_counts = {}  # conflict.id -> number of words spanned
     for c in conflicts:
-        conflict_map.setdefault(c.segment_id, []).append(c)
+        detected_words = len(c.detected_text.split()) if c.detected_text else 0
+        expected_words = len(c.expected_text.split()) if c.expected_text else 0
+        span = max(detected_words, expected_words, 1)
+        conflict_span_counts[c.id] = span
+
+        # Find starting position in the segment list
+        start_pos = next(
+            (i for i, s in enumerate(segments) if s.id == c.segment_id), None
+        )
+        if start_pos is not None:
+            for offset in range(span):
+                idx = start_pos + offset
+                if idx < len(segments):
+                    conflict_map.setdefault(segments[idx].id, []).append(c)
+        else:
+            conflict_map.setdefault(c.segment_id, []).append(c)
 
     take_map = {}
     for seg in segments:
@@ -154,6 +171,7 @@ def edit(project_id):
         segments=segments,
         conflicts=conflicts,
         conflict_map=conflict_map,
+        conflict_span_counts=conflict_span_counts,
         take_map=take_map,
         audio_files=audio_files,
     )

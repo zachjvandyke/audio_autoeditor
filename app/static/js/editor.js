@@ -89,11 +89,22 @@
         // Scroll annotation into view
         item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
-        // Highlight corresponding word in manuscript
+        // Highlight corresponding word(s) in manuscript
         const segmentId = item.dataset.segmentId;
+        const spanCount = parseInt(item.dataset.spanCount) || 1;
         const wordSpan = manuscriptView.querySelector('.word-span[data-segment-id="' + segmentId + '"]');
         if (wordSpan) {
             wordSpan.classList.add('active');
+            // Highlight consecutive sibling word-spans for multi-word phrases
+            var sibling = wordSpan;
+            for (var s = 1; s < spanCount; s++) {
+                sibling = sibling.nextElementSibling;
+                if (sibling && sibling.classList.contains('word-span')) {
+                    sibling.classList.add('active');
+                } else {
+                    break;
+                }
+            }
             wordSpan.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
 
