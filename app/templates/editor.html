@@ -56,7 +56,8 @@
                  data-conflict-id="{{ conflict.id }}"
                  data-segment-id="{{ conflict.segment_id }}"
                  data-conflict-type="{{ conflict.conflict_type }}"
-                 data-status="{{ conflict.status }}">
+                 data-status="{{ conflict.status }}"
+                 data-span-count="{{ conflict_span_counts.get(conflict.id, 1) }}">
                 <div class="annotation-type">
                     <span class="type-badge type-{{ conflict.conflict_type }}">
                         {% if conflict.conflict_type == 'misread' %}
@@ -75,13 +76,13 @@
                 </div>
                 <div class="annotation-content">
                     {% if conflict.detected_text and conflict.expected_text %}
-                        <span class="detected">"{{ conflict.detected_text }}"</span>
+                        <span class="detected" title="{{ conflict.detected_text }}">"{{ conflict.detected_text }}"</span>
                         <span class="arrow">&#8594;</span>
-                        <span class="expected">"{{ conflict.expected_text }}"</span>
+                        <span class="expected" title="{{ conflict.expected_text }}">"{{ conflict.expected_text }}"</span>
                     {% elif conflict.detected_text %}
-                        <span class="detected">"{{ conflict.detected_text }}"</span>
+                        <span class="detected" title="{{ conflict.detected_text }}">"{{ conflict.detected_text }}"</span>
                     {% elif conflict.expected_text %}
-                        <span class="expected missing-label">(missing: "{{ conflict.expected_text }}")</span>
+                        <span class="expected missing-label" title="{{ conflict.expected_text }}">(missing: "{{ conflict.expected_text }}")</span>
                     {% endif %}
                 </div>
                 <div class="annotation-actions">

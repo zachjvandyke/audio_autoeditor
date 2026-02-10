@@ -531,11 +531,27 @@ a:hover { color: var(--primary-hover); }
     font-size: 0.85rem;
     margin-bottom: 0.35rem;
     line-height: 1.4;
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    overflow: hidden;
 }
-.detected { color: var(--danger); font-family: var(--font-mono); font-size: 0.8rem; }
-.expected { color: var(--success); font-family: var(--font-mono); font-size: 0.8rem; }
+.detected, .expected {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 45%;
+    display: inline-block;
+    vertical-align: baseline;
+}
+.detected { color: var(--danger); }
+.expected { color: var(--success); }
+/* When only one text field is shown, let it use full width */
+.detected:only-child, .expected:only-child { max-width: 100%; }
 .missing-label { color: var(--text-muted); }
-.arrow { color: var(--text-muted); margin: 0 0.25rem; }
+.arrow { color: var(--text-muted); margin: 0 0.25rem; flex-shrink: 0; }
 
 .annotation-actions {
     display: flex;
