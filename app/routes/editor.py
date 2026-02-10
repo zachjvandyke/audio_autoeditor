@@ -10,6 +10,26 @@ from app.services.rpp import export_rpp
 
 editor_bp = Blueprint("editor", __name__)
 
+# SQLite max variable limit is 999; use 500 per batch to leave room for other params.
+_BATCH_SIZE = 500
+
+
+def _batched_in_query(query_fn, ids):
+    """Execute a query in batches to avoid SQLite's 999 variable limit.
+
+    ``query_fn`` is a callable that accepts a collection of IDs and returns a
+    SQLAlchemy query object.  The results from each batch are combined into a
+    single list.
+    """
+    ids = list(ids)
+    if not ids:
+        return []
+    results = []
+    for i in range(0, len(ids), _BATCH_SIZE):
+        batch = ids[i : i + _BATCH_SIZE]
+        results.extend(query_fn(batch).all())
+    return results
+
 
 @editor_bp.route("/<int:project_id>")
 def edit(project_id):
@@ -43,10 +63,13 @@ def edit(project_id):
 
     # Get alignment segments for these paragraphs
     if para_ids:
-        segments = AlignmentSegment.query.filter(
-            AlignmentSegment.project_id == project_id,
-            AlignmentSegment.manuscript_section_id.in_(para_ids),
-        ).order_by(AlignmentSegment.segment_index).all()
+        segments = _batched_in_query(
+            lambda batch: AlignmentSegment.query.filter(
+                AlignmentSegment.project_id == project_id,
+                AlignmentSegment.manuscript_section_id.in_(batch),
+            ).order_by(AlignmentSegment.segment_index),
+            para_ids,
+        )
     else:
         segments = AlignmentSegment.query.filter_by(
             project_id=project_id
@@ -57,10 +80,13 @@ def edit(project_id):
 
     # Get conflicts for these segments
     if seg_ids:
-        conflicts = Conflict.query.filter(
-            Conflict.project_id == project_id,
-            Conflict.segment_id.in_(seg_ids),
-        ).order_by(Conflict.id).all()
+        conflicts = _batched_in_query(
+            lambda batch: Conflict.query.filter(
+                Conflict.project_id == project_id,
+                Conflict.segment_id.in_(batch),
+            ).order_by(Conflict.id),
+            seg_ids,
+        )
     else:
         conflicts = Conflict.query.filter_by(
             project_id=project_id
@@ -87,16 +113,22 @@ def edit(project_id):
         ch_para_ids = {p.id for p in ch.children}
         if ch_para_ids:
             ch_seg_ids = {
-                s.id for s in AlignmentSegment.query.filter(
-                    AlignmentSegment.project_id == project_id,
-                    AlignmentSegment.manuscript_section_id.in_(ch_para_ids),
-                ).all()
+                s.id for s in _batched_in_query(
+                    lambda batch: AlignmentSegment.query.filter(
+                        AlignmentSegment.project_id == project_id,
+                        AlignmentSegment.manuscript_section_id.in_(batch),
+                    ),
+                    ch_para_ids,
+                )
             }
             if ch_seg_ids:
-                ch_conflicts = Conflict.query.filter(
-                    Conflict.project_id == project_id,
-                    Conflict.segment_id.in_(ch_seg_ids),
-                ).all()
+                ch_conflicts = _batched_in_query(
+                    lambda batch: Conflict.query.filter(
+                        Conflict.project_id == project_id,
+                        Conflict.segment_id.in_(batch),
+                    ),
+                    ch_seg_ids,
+                )
                 total = len(ch_conflicts)
                 pending = sum(1 for c in ch_conflicts if c.status == "pending")
                 chapter_stats[ch.id] = {"total": total, "pending": pending}
@@ -158,10 +190,13 @@ def export(project_id):
             })
 
         if ch_para_ids:
-            ch_segments = AlignmentSegment.query.filter(
-                AlignmentSegment.project_id == project_id,
-                AlignmentSegment.manuscript_section_id.in_(ch_para_ids),
-            ).order_by(AlignmentSegment.segment_index).all()
+            ch_segments = _batched_in_query(
+                lambda batch: AlignmentSegment.query.filter(
+                    AlignmentSegment.project_id == project_id,
+                    AlignmentSegment.manuscript_section_id.in_(batch),
+                ).order_by(AlignmentSegment.segment_index),
+                ch_para_ids,
+            )
 
             ch_seg_ids = {s.id for s in ch_segments}
 
@@ -180,10 +215,13 @@ def export(project_id):
                 })
 
             if ch_seg_ids:
-                ch_conflicts = Conflict.query.filter(
-                    Conflict.project_id == project_id,
-                    Conflict.segment_id.in_(ch_seg_ids),
-                ).all()
+                ch_conflicts = _batched_in_query(
+                    lambda batch: Conflict.query.filter(
+                        Conflict.project_id == project_id,
+                        Conflict.segment_id.in_(batch),
+                    ),
+                    ch_seg_ids,
+                )
                 for c in ch_conflicts:
                     all_conflict_data.append({
                         "segment_index": c.segment.segment_index if c.segment else 0,
