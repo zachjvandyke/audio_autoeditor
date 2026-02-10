@@ -11,6 +11,7 @@ from app.models import (
 )
 from app.services.alignment import (
     align_transcript_to_manuscript, detect_retakes, transcribe_audio,
+    _normalize_text_to_words,
 )
 from app.services.audio import allowed_file, get_duration_ffprobe, get_sample_rate, save_upload
 from app.services.conflict import detect_conflicts
@@ -311,6 +312,14 @@ def _process_chapterized(app, project_id: int):
             db.session.commit()
             continue
 
+        # Build paragraph word ranges for position-based segment assignment
+        para_word_ranges = []
+        word_offset = 0
+        for para in paragraphs:
+            n = len(_normalize_text_to_words(para.text_content))
+            para_word_ranges.append((para, word_offset, word_offset + n))
+            word_offset += n
+
         chapter_audio = AudioFile.query.filter_by(
             project_id=project_id, chapter_id=chapter.id
         ).order_by(AudioFile.sort_order).all()
@@ -334,12 +343,24 @@ def _process_chapterized(app, project_id: int):
                 transcript_words, chapter_text
             )
 
+            manuscript_word_cursor = 0
             for seg in aligned:
                 seg["segment_index"] = global_seg_idx
+
+                # Assign segment to paragraph by word position
+                para_id = None
+                if para_word_ranges:
+                    for para, w_start, w_end in para_word_ranges:
+                        if w_start <= manuscript_word_cursor < w_end:
+                            para_id = para.id
+                            break
+                    if para_id is None:
+                        para_id = para_word_ranges[-1][0].id
 
                 db_seg = AlignmentSegment(
                     project_id=project_id,
                     audio_file_id=audio.id,
+                    manuscript_section_id=para_id,
                     text=seg["text"],
                     expected_text=seg["expected_text"],
                     start_time=seg["start_time"],
@@ -348,11 +369,11 @@ def _process_chapterized(app, project_id: int):
                     segment_type=seg["segment_type"],
                     segment_index=global_seg_idx,
                 )
-                if paragraphs:
-                    db_seg.manuscript_section_id = _find_best_section(
-                        seg, paragraphs
-                    )
                 db.session.add(db_seg)
+
+                # Advance cursor for manuscript words (everything except extra words)
+                if seg.get("alignment") != "extra":
+                    manuscript_word_cursor += 1
                 db.session.flush()
 
                 if seg["start_time"] != seg["end_time"]:
@@ -633,6 +654,14 @@ def _process_unassigned_audio(project_id: int, upload_folder: str, global_seg_id
     if not full_text:
         return
 
+    # Build paragraph word ranges for position-based segment assignment
+    para_word_ranges = []
+    word_offset = 0
+    for para in all_paragraphs:
+        n = len(_normalize_text_to_words(para.text_content))
+        para_word_ranges.append((para, word_offset, word_offset + n))
+        word_offset += n
+
     for audio in unassigned:
         filepath = os.path.join(upload_folder, audio.filename)
         if not os.path.exists(filepath):
@@ -642,11 +671,24 @@ def _process_unassigned_audio(project_id: int, upload_folder: str, global_seg_id
         aligned = align_transcript_to_manuscript(transcript_words, full_text)
 
         chapter_segments = []
+        manuscript_word_cursor = 0
         for seg in aligned:
             seg["segment_index"] = global_seg_idx
+
+            # Assign segment to paragraph by word position
+            para_id = None
+            if para_word_ranges:
+                for para, w_start, w_end in para_word_ranges:
+                    if w_start <= manuscript_word_cursor < w_end:
+                        para_id = para.id
+                        break
+                if para_id is None:
+                    para_id = para_word_ranges[-1][0].id
+
             db_seg = AlignmentSegment(
                 project_id=project_id,
                 audio_file_id=audio.id,
+                manuscript_section_id=para_id,
                 text=seg["text"],
                 expected_text=seg["expected_text"],
                 start_time=seg["start_time"],
@@ -655,11 +697,11 @@ def _process_unassigned_audio(project_id: int, upload_folder: str, global_seg_id
                 segment_type=seg["segment_type"],
                 segment_index=global_seg_idx,
             )
-            if all_paragraphs:
-                db_seg.manuscript_section_id = _find_best_section(
-                    seg, all_paragraphs
-                )
             db.session.add(db_seg)
+
+            # Advance cursor for manuscript words (everything except extra words)
+            if seg.get("alignment") != "extra":
+                manuscript_word_cursor += 1
             db.session.flush()
 
             if seg["start_time"] != seg["end_time"]:
@@ -697,14 +739,3 @@ def _process_unassigned_audio(project_id: int, upload_folder: str, global_seg_id
         db.session.commit()
 
 
-def _find_best_section(seg: dict, paragraphs: list) -> int | None:
-    """Find the manuscript section that best matches this segment's expected text."""
-    expected = seg.get("expected_text", "").lower()
-    if not expected:
-        return paragraphs[0].id if paragraphs else None
-
-    for p in paragraphs:
-        if expected in p.text_content.lower():
-            return p.id
-
-    return paragraphs[0].id if paragraphs else None
