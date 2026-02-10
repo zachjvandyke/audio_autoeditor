@@ -26,12 +26,16 @@
     let playTimeout = null;
     let currentAudioFileId = null;
     let cachedWordSpans = null;
+    let wordTimingCache = null;   // Pre-parsed timing data for binary search
+    let syncAnimFrame = null;     // requestAnimationFrame handle
+    let lastHighlightIdx = -1;    // Previously highlighted word index
 
     // ========================
     // Initialization
     // ========================
 
     function init() {
+        buildWordTimingCache();
         updateVisibleAnnotations();
         bindAnnotationClicks();
         bindWordClicks();
@@ -250,8 +254,9 @@
         clearPlayingHighlights();
         currentAudioFileId = audioFileId || null;
         audioPlayer.currentTime = startTime;
-        audioPlayer.play();
         isPlaying = true;
+        audioPlayer.play();
+        startSyncLoop();
 
         // Only auto-stop if an explicit end time is provided (e.g. take playback).
         // Normal playback continues until the user pauses.
@@ -274,10 +279,106 @@
         return cachedWordSpans;
     }
 
+    /**
+     * Build a pre-parsed timing cache sorted by start time for binary search.
+     * Called once at init and whenever the word spans change.
+     */
+    function buildWordTimingCache() {
+        var spans = getWordSpans();
+        wordTimingCache = new Array(spans.length);
+        for (var i = 0; i < spans.length; i++) {
+            wordTimingCache[i] = {
+                start: parseFloat(spans[i].dataset.start),
+                end:   parseFloat(spans[i].dataset.end),
+                audioId: spans[i].dataset.audioId,
+                span:  spans[i]
+            };
+        }
+        // Sort by start time for binary search
+        wordTimingCache.sort(function(a, b) { return a.start - b.start; });
+    }
+
+    /**
+     * Binary search to find the word span whose time range contains currentTime.
+     * Returns the index into wordTimingCache, or -1 if none found.
+     */
+    function findCurrentWordIndex(currentTime, audioFileId) {
+        if (!wordTimingCache || wordTimingCache.length === 0) return -1;
+
+        var lo = 0;
+        var hi = wordTimingCache.length - 1;
+
+        // Find the rightmost entry whose start <= currentTime
+        while (lo <= hi) {
+            var mid = (lo + hi) >>> 1;
+            if (wordTimingCache[mid].start <= currentTime) {
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        // hi now points to the rightmost entry with start <= currentTime
+        // Search backwards from hi for a matching span
+        for (var i = hi; i >= 0 && i >= hi - 2; i--) {
+            var entry = wordTimingCache[i];
+            if (currentTime >= entry.start && currentTime < entry.end) {
+                if (!audioFileId || entry.audioId === audioFileId) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Start the requestAnimationFrame sync loop for highlighting.
+     */
+    function startSyncLoop() {
+        if (syncAnimFrame) return;  // Already running
+
+        function tick() {
+            if (!isPlaying) {
+                syncAnimFrame = null;
+                return;
+            }
+
+            var currentTime = audioPlayer.currentTime;
+            var idx = findCurrentWordIndex(currentTime, currentAudioFileId);
+
+            if (idx !== lastHighlightIdx) {
+                // Remove previous highlight
+                if (lastHighlightIdx >= 0 && lastHighlightIdx < wordTimingCache.length) {
+                    wordTimingCache[lastHighlightIdx].span.classList.remove('playing');
+                }
+                // Add new highlight
+                if (idx >= 0) {
+                    wordTimingCache[idx].span.classList.add('playing');
+                }
+                lastHighlightIdx = idx;
+            }
+
+            syncAnimFrame = requestAnimationFrame(tick);
+        }
+
+        syncAnimFrame = requestAnimationFrame(tick);
+    }
+
+    /**
+     * Stop the sync loop and clear highlights.
+     */
+    function stopSyncLoop() {
+        if (syncAnimFrame) {
+            cancelAnimationFrame(syncAnimFrame);
+            syncAnimFrame = null;
+        }
+        if (lastHighlightIdx >= 0 && lastHighlightIdx < wordTimingCache.length) {
+            wordTimingCache[lastHighlightIdx].span.classList.remove('playing');
+        }
+        lastHighlightIdx = -1;
+    }
+
     function clearPlayingHighlights() {
-        getWordSpans().forEach(function(span) {
-            span.classList.remove('playing');
-        });
+        stopSyncLoop();
     }
 
     // ========================
@@ -598,6 +699,7 @@
     // ========================
 
     if (audioPlayer) {
+        // Time display updates (low frequency is fine for this)
         audioPlayer.addEventListener('timeupdate', function() {
             const current = document.getElementById('currentTime');
             if (current) {
@@ -606,23 +708,12 @@
                 const sec = Math.floor(t % 60);
                 current.textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
             }
+        });
 
-            // Highlight current word during playback
+        // Start rAF sync loop when audio begins playing
+        audioPlayer.addEventListener('playing', function() {
             if (isPlaying) {
-                const currentTime = audioPlayer.currentTime;
-                getWordSpans().forEach(function(span) {
-                    const start = parseFloat(span.dataset.start);
-                    const end = parseFloat(span.dataset.end);
-                    // Only highlight words from the currently playing audio file
-                    if (currentAudioFileId && span.dataset.audioId !== currentAudioFileId) {
-                        span.classList.remove('playing');
-                    // Use < for end to prevent two adjacent words highlighting simultaneously
-                    } else if (currentTime >= start && currentTime < end) {
-                        span.classList.add('playing');
-                    } else {
-                        span.classList.remove('playing');
-                    }
-                });
+                startSyncLoop();
             }
         });
 
