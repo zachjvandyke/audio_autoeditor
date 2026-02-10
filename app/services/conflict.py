@@ -4,6 +4,7 @@ Consecutive words with the same conflict type (e.g. three added words "as he
 said") are grouped into a single conflict record instead of producing one
 per word.
 """
+from __future__ import annotations
 
 
 # Map alignment values to the conflict type they produce.
