@@ -254,7 +254,7 @@ def add_chapter(project_id):
                     ManuscriptSection.parent_id == source_chapter.id,
                     ManuscriptSection.section_type == "paragraph",
                     ManuscriptSection.section_index >= split_para.section_index,
-                ).all()
+                ).order_by(ManuscriptSection.section_index).all()
                 for idx, p in enumerate(paras_to_move):
                     p.parent_id = new_chapter.id
                     p.section_index = idx
