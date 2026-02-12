@@ -70,6 +70,8 @@ def edit(project_id):
             ).order_by(AlignmentSegment.segment_index),
             para_ids,
         )
+        # Re-sort after combining batches to guarantee global segment order
+        segments.sort(key=lambda s: s.segment_index)
     else:
         segments = AlignmentSegment.query.filter_by(
             project_id=project_id
@@ -215,6 +217,8 @@ def export(project_id):
                 ).order_by(AlignmentSegment.segment_index),
                 ch_para_ids,
             )
+            # Re-sort after combining batches to guarantee segment order
+            ch_segments.sort(key=lambda s: s.segment_index)
 
             ch_seg_ids = {s.id for s in ch_segments}
 
